@@ -1,0 +1,15 @@
+{
+    "name": "RGB Sunglasses App Dev Container",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": []
+        }
+    },
+    "runArgs": [
+        "--privileged"
+    ],
+    "postCreateCommand": {}
+}
