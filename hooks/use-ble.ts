@@ -1,5 +1,8 @@
 import * as ExpoDevice from "expo-device";
 import { PermissionsAndroid, Platform } from "react-native";
+import { BleManager } from "react-native-ble-plx";
+
+export const bleManager = new BleManager();
 
 const requestAndroid31Permissions = async () => {
     const bluetoothScanPermission = await PermissionsAndroid.request(

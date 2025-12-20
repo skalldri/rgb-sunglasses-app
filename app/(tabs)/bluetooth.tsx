@@ -5,7 +5,12 @@ import { Image } from 'expo-image';
 import { useState } from "react";
 import { Button, ScrollView, StyleSheet } from 'react-native';
 
-import { requestPermissions } from "@/hooks/use-ble";
+import { bleManager, requestPermissions } from "@/hooks/use-ble";
+
+type BleDevice = {
+    name: string;
+    mac: string;
+};
 
 export default function BluetoothScreen() {
 
@@ -16,8 +21,15 @@ export default function BluetoothScreen() {
     // 3. The application modifies the state variable using the declared function
     // 4. React automatically re-renders the app using the updated state variables 
     const [isScanning, setIsScanning] = useState(false);
-    const [devices, setDevices] = useState<Array<{ key: number, name: string }>>([]);
+    const [devices, setDevices] = useState<BleDevice[]>([]);
 
+    /**
+     * 
+     * @param mac De-duplicate devices
+     */
+    function isDuplicateDevice(allDevices: BleDevice[], newMac: string) {
+        return allDevices.findIndex((d) => d.mac === newMac) >= 0;
+    }
 
     async function DoBluetoothScan() {
         console.log('Starting Bluetooth scan...');
@@ -25,12 +37,33 @@ export default function BluetoothScreen() {
         setDevices([]);
         await requestPermissions();
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await bleManager.startDeviceScan(null, null, (error, device) => {
+            if (error) {
+                console.log(error);
+            }
 
-        setDevices([
-            { name: "RGB Sunglasses", key: 0 },
-            { name: "RGB Sunglasses 2", key: 1 }
-        ]);
+            if (device) {
+                if (device.localName?.includes("RGB Sunglasses")) {
+                    console.log(`Found device: ${device.name ?? 'Unnamed'} (${device.id})`);
+
+                    setDevices((prevDevices) => {
+
+                        if (!isDuplicateDevice(prevDevices, device.id)) {
+                            return [...prevDevices, { name: device.localName ?? 'Unnamed', mac: device.id }];
+                        }
+
+                        return prevDevices;
+                    });
+                }
+            }
+        });
+
+        const connectedDevices = await bleManager.connectedDevices([]);
+        console.log(`Connected Devices: ${connectedDevices}`)
+
+        for (const device of connectedDevices) {
+            console.log(`Already connected to device: ${device.name ?? 'Unnamed'} (${device.id})`);
+        }
 
         console.log('Bluetooth scan complete');
         setIsScanning(false);
@@ -47,7 +80,7 @@ export default function BluetoothScreen() {
             }
         >
             <ThemedText>
-                {`Tap the Explore tab to learn more about what's included in this starter app.`}
+                {`Connect to the RGB Sunglasses`}
             </ThemedText>
 
             <Button
@@ -59,8 +92,9 @@ export default function BluetoothScreen() {
             <ScrollView>
                 {devices.map(device => (
                     <BluetoothDeviceListItem
-                        key={device.key}
+                        key={device.mac}
                         deviceName={device.name}
+                        macAddress={device.mac}
                     />
                 ))}
 
