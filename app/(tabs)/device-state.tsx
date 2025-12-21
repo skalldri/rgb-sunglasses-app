@@ -2,9 +2,14 @@ import { ThemedText } from "@/components/themed-text";
 import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_UTF8S, getCharacteristicName, getServiceName } from "@/constants/bluetooth";
 import { useBluetooth } from "@/context/bluetooth-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { Link } from "expo-router";
 import React, { useState } from "react";
-import { ScrollView, Switch, TextInput, View } from "react-native";
+import { Button, ScrollView, Switch, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+// UUIDs for McuMgr service and characteristic
+const MCUMGR_SERVICE_UUID = "8d53dc1d-1db7-4cd3-868b-8a527460aa84";
+const MCUMGR_CHARACTERISTIC_UUID = "da2e7828-fbce-4e01-ae9e-261174997c48";
 
 
 
@@ -75,6 +80,8 @@ export default function DeviceStateScreen() {
                                 </ThemedText>
 
                                 {Object.entries(selectedDevice?.characteristicsByService[service.uuid] ?? {}).map(([charUuid, charInfo], charIndex) => {
+                                    const isMcuMgrCharacteristic = service.uuid === MCUMGR_SERVICE_UUID && charUuid === MCUMGR_CHARACTERISTIC_UUID;
+
                                     return (
                                         <View
                                             key={`${service.uuid}-char-${charIndex}`}
@@ -82,6 +89,11 @@ export default function DeviceStateScreen() {
                                             <ThemedText style={{ fontSize: 12, flex: 1 }}>
                                                 {charInfo.name ?? getCharacteristicName(charUuid)}
                                             </ThemedText>
+                                            {isMcuMgrCharacteristic && (
+                                                <Link href="/firmware-update-modal" asChild>
+                                                    <Button title="Update" onPress={() => { }} />
+                                                </Link>
+                                            )}
                                             {renderCharacteristicInput(charUuid, charInfo)}
                                         </View>
                                     );
