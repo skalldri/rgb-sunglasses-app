@@ -24,9 +24,20 @@ export default function DeviceStateScreen() {
 
     function renderCharacteristicInput(charUuid: string, charInfo: any) {
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_BOOLEAN) {
+            // Decode the boolean value from the characteristic if available
+            let initialValue = false;
+            if (charInfo.value && charValues[charUuid] === undefined) {
+                try {
+                    const decoded = atob(charInfo.value);
+                    initialValue = decoded.charCodeAt(0) !== 0;
+                } catch (e) {
+                    console.log('Error decoding boolean value:', e);
+                }
+            }
+
             return (
                 <Switch
-                    value={charValues[charUuid] ?? false}
+                    value={charValues[charUuid] ?? initialValue}
                     onValueChange={(value) => {
                         console.log(`Toggle changed to: ${value}`);
                         setCharValues(prev => ({ ...prev, [charUuid]: value }));
@@ -36,6 +47,16 @@ export default function DeviceStateScreen() {
         }
 
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
+            // Decode the UTF8 string value from the characteristic if available
+            let initialValue = '';
+            if (charInfo.value && charValues[charUuid] === undefined) {
+                try {
+                    initialValue = atob(charInfo.value);
+                } catch (e) {
+                    console.log('Error decoding UTF8 value:', e);
+                }
+            }
+
             return (
                 <TextInput
                     style={{
@@ -48,7 +69,7 @@ export default function DeviceStateScreen() {
                     }}
                     placeholder="Enter value"
                     placeholderTextColor="#888"
-                    value={charValues[charUuid] ?? ''}
+                    value={charValues[charUuid] ?? initialValue}
                     onChangeText={(text) => {
                         console.log(`Text changed to: ${text}`);
                         setCharValues(prev => ({ ...prev, [charUuid]: text }));

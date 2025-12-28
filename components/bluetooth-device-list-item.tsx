@@ -9,10 +9,9 @@ import { ThemedText } from "./themed-text";
 interface Props {
     deviceName: string;
     macAddress: string;
-    key: string | number;
 }
 
-export default function BluetoothDeviceListItem({ key, deviceName, macAddress }: Props) {
+export default function BluetoothDeviceListItem({ deviceName, macAddress }: Props) {
 
     const { selectedDevice, setSelectedDevice, setIsScanning } = useBluetooth();
     const [canPress, setCanPress] = useState<boolean>(true); // Prevent clicking the button while the long pairing process is active
@@ -68,8 +67,11 @@ export default function BluetoothDeviceListItem({ key, deviceName, macAddress }:
                                         const descriptors = await service.descriptorsForCharacteristic(characteristic.uuid);
                                         console.log(`Characteristic: ${getCharacteristicName(characteristic.uuid)}, Descriptors: ${descriptors.length}`);
 
+
+
                                         const charInfo: any = {
                                             characteristic,
+                                            value: null,
                                             name: null,
                                             cpfFormat: null,
                                         };
@@ -90,6 +92,15 @@ export default function BluetoothDeviceListItem({ key, deviceName, macAddress }:
                                                 const hex = Array.from(decoded, char => char.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
                                                 console.log(`CPF Descriptor Value (hex): ${hex}`);
                                             }
+                                        }
+
+                                        // Read the current characteristic value
+                                        try {
+                                            const readCharacteristic = await characteristic.read();
+                                            charInfo.value = readCharacteristic.value;
+                                            console.log(`Characteristic Value: ${charInfo.value}`);
+                                        } catch (error) {
+                                            console.log(`Could not read characteristic ${getCharacteristicName(characteristic.uuid)}:`, error);
                                         }
 
                                         characteristicInfos[characteristic.uuid] = charInfo;
