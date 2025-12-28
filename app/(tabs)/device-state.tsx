@@ -1,5 +1,5 @@
 import { ThemedText } from "@/components/themed-text";
-import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_UTF8S, getCharacteristicName, getServiceName } from "@/constants/bluetooth";
+import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_CUSTOM_COLOR, BLE_GATT_CPF_FORMAT_UTF8S, getCharacteristicName, getServiceName } from "@/constants/bluetooth";
 import { useBluetooth } from "@/context/bluetooth-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Link } from "expo-router";
@@ -56,6 +56,16 @@ export default function DeviceStateScreen() {
                 />
             );
         }
+
+        if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_CUSTOM_COLOR) {
+            return (
+                <Link href="/color-picker-modal" asChild>
+                    <Button title="Pick Color" onPress={() => { }} />
+                </Link>
+            );
+        }
+
+
 
         return null;
     }

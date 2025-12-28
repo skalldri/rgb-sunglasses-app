@@ -90,7 +90,13 @@ export default function FirmwareUpdateModal() {
         try {
             setStatus('Fetching slot info...');
             const info = await c.getSlotInfo();
-            setSlotInfo(info);
+            // Only set slot info if it has the images property
+            if (info && info.images && Array.isArray(info.images)) {
+                setSlotInfo(info);
+            } else {
+                console.log('Slot info response missing images array:', info);
+                setSlotInfo(null);
+            }
             setStatus('');
         } catch (e: unknown) {
             // Slot info command may not be supported on all devices
@@ -453,7 +459,7 @@ export default function FirmwareUpdateModal() {
                             />
                         </View>
 
-                        {slotInfo && (
+                        {slotInfo?.images && slotInfo.images.length > 0 && (
                             <>
                                 <ThemedText type="subtitle" style={styles.sectionTitle}>
                                     Slot Info
@@ -468,7 +474,7 @@ export default function FirmwareUpdateModal() {
                                                 Max Size: {formatBytes(imageInfo.max_image_size)}
                                             </ThemedText>
                                         )}
-                                        {imageInfo.slots.map((slot, slotIdx) => (
+                                        {imageInfo.slots?.map((slot, slotIdx) => (
                                             <ThemedText key={slotIdx} style={styles.slotDetail}>
                                                 Slot {slot.slot}: {formatBytes(slot.size)}
                                                 {slot.upload_image_id !== undefined && ` (upload target: image ${slot.upload_image_id})`}
@@ -512,7 +518,7 @@ export default function FirmwareUpdateModal() {
                 )}
             </ScrollView>
 
-            <Link href="/" dismissTo style={styles.link}>
+            <Link href="../" style={styles.link}>
                 <ThemedText type="link">Done</ThemedText>
             </Link>
         </ThemedView>

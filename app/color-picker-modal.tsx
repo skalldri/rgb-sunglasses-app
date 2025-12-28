@@ -162,7 +162,7 @@ export default function ColorPickerModal() {
                 />
             </View>
 
-            <Link href="/" dismissTo style={styles.link}>
+            <Link href="../" style={styles.link}>
                 <ThemedText type="link">Done</ThemedText>
             </Link>
         </ThemedView>

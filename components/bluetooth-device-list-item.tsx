@@ -1,8 +1,9 @@
 import { getCharacteristicName, getDescriptorName, getServiceName, getUuidForCpfDescriptor, getUuidForCudDescriptor } from "@/constants/bluetooth";
 import { useBluetooth } from "@/context/bluetooth-context";
 import { bleManager } from "@/hooks/use-ble";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ActivityIndicator, Button, View } from "react-native";
+import { Subscription } from "react-native-ble-plx";
 import { ThemedText } from "./themed-text";
 
 interface Props {
@@ -15,6 +16,7 @@ export default function BluetoothDeviceListItem({ key, deviceName, macAddress }:
 
     const { selectedDevice, setSelectedDevice } = useBluetooth();
     const [canPress, setCanPress] = useState<boolean>(true); // Prevent clicking the button while the long pairing process is active
+    const disconnectSubscriptionRef = useRef<Subscription | null>(null);
 
     function isSelected() {
         return selectedDevice?.mac === macAddress;
@@ -36,7 +38,16 @@ export default function BluetoothDeviceListItem({ key, deviceName, macAddress }:
                         setCanPress(false);
                         if (isSelected()) {
                             console.log(`Disconnecting from device: ${deviceName} (${macAddress})`);
+
+                            // Clean up disconnection listener
+                            if (disconnectSubscriptionRef.current) {
+                                disconnectSubscriptionRef.current.remove();
+                                disconnectSubscriptionRef.current = null;
+                            }
+
                             await bleManager.cancelDeviceConnection(macAddress);
+                            setSelectedDevice(null);
+                            setCanPress(true);
                         } else {
                             console.log(`Pairing with device: ${deviceName} (${macAddress})`);
 
@@ -95,6 +106,26 @@ export default function BluetoothDeviceListItem({ key, deviceName, macAddress }:
                                 device: deviceConnection,
                                 services: services,
                                 characteristicsByService: characteristicsByService,
+                            });
+
+                            // Set up disconnection listener after successful connection
+                            disconnectSubscriptionRef.current = bleManager.onDeviceDisconnected(macAddress, (error, device) => {
+                                if (error) {
+                                    console.log(`Device disconnection error for ${macAddress}:`, error);
+                                }
+
+                                if (device && device.id === macAddress) {
+                                    console.log(`Device disconnected: ${deviceName} (${macAddress})`);
+
+                                    // Clear selected device
+                                    setSelectedDevice(null);
+
+                                    // Reset button state
+                                    setCanPress(true);
+
+                                    // Clean up subscription reference
+                                    disconnectSubscriptionRef.current = null;
+                                }
                             });
 
                             bleManager.stopDeviceScan();

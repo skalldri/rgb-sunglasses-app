@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Button, ScrollView, StyleSheet } from 'react-native';
 
 import { bleManager, requestPermissions } from "@/hooks/use-ble";
+import { LogLevel } from "react-native-ble-plx";
 
 type BleDevice = {
     name: string;
@@ -37,6 +38,8 @@ export default function BluetoothScreen() {
         setDevices([]);
         await requestPermissions();
 
+        bleManager.setLogLevel(LogLevel.Verbose);
+
         await bleManager.startDeviceScan(null, null, (error, device) => {
             if (error) {
                 console.log(error);
@@ -58,7 +61,8 @@ export default function BluetoothScreen() {
             }
         });
 
-        const connectedDevices = await bleManager.connectedDevices([]);
+        // Check if any devices are already paired with the OS with the "Core Config Service" UUID
+        const connectedDevices = await bleManager.connectedDevices(["12345678-1234-5678-0001-56789abc0000"]);
         console.log(`Connected Devices: ${connectedDevices}`)
 
         for (const device of connectedDevices) {
@@ -67,6 +71,23 @@ export default function BluetoothScreen() {
 
         console.log('Bluetooth scan complete');
         setIsScanning(false);
+    }
+
+    async function DoAlreadyConnectedScan() {
+        console.log('Starting already connected Bluetooth scan...');
+        await requestPermissions();
+
+        bleManager.setLogLevel(LogLevel.Verbose);
+
+        // Check if any devices are already paired with the OS with the "Core Config Service" UUID
+        const connectedDevices = await bleManager.connectedDevices(["12345678-1234-5678-0001-56789abc0000"]);
+        console.log(`Connected Devices: ${connectedDevices}`)
+
+        for (const device of connectedDevices) {
+            console.log(`Already connected to device: ${device.name ?? 'Unnamedr'} (${device.id})`);
+        }
+
+        console.log('Bluetooth scan complete');
     }
 
     return (
@@ -87,6 +108,11 @@ export default function BluetoothScreen() {
                 onPress={DoBluetoothScan}
                 title={isScanning ? "Scanning..." : "Scan for Bluetooth Devices"}
                 disabled={isScanning}
+            />
+
+            <Button
+                onPress={DoAlreadyConnectedScan}
+                title="Already Connected Scan"
             />
 
             <ScrollView>
