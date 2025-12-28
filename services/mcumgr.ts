@@ -361,13 +361,13 @@ export class McuMgrClient {
      * Handle incoming response data (may be fragmented)
      */
     private handleResponse(data: Uint8Array): void {
-        console.log(`handleResponse called with ${data.length} bytes`);
+        //console.log(`handleResponse called with ${data.length} bytes`);
 
         if (this.responseBuffer.length === 0) {
             // First fragment - parse header to get expected length
             const header = parseSmpHeader(data);
             this.expectedLength = SMP_HEADER_SIZE + header.length;
-            console.log(`First fragment, expecting total ${this.expectedLength} bytes`);
+            //console.log(`First fragment, expecting total ${this.expectedLength} bytes`);
         }
 
         // Append data to buffer
@@ -376,11 +376,11 @@ export class McuMgrClient {
         newBuffer.set(data, this.responseBuffer.length);
         this.responseBuffer = newBuffer;
 
-        console.log(`Buffer now has ${this.responseBuffer.length}/${this.expectedLength} bytes`);
+        //console.log(`Buffer now has ${this.responseBuffer.length}/${this.expectedLength} bytes`);
 
         // Check if we have the complete response
         if (this.responseBuffer.length >= this.expectedLength && this.responseResolver) {
-            console.log(`Response complete, resolving promise`);
+            //console.log(`Response complete, resolving promise`);
             const completeResponse = this.responseBuffer.slice(0, this.expectedLength);
             this.responseBuffer = new Uint8Array(0);
             this.expectedLength = 0;
@@ -442,24 +442,24 @@ export class McuMgrClient {
                     reject(new Error(`SMP request timeout after ${timeout}ms`));
                 }
             }, timeout);
-            console.log(`Timeout set for ${timeout}ms`);
+            //console.log(`Timeout set for ${timeout}ms`);
         });
 
         // Fragment and send if necessary
         const maxPayloadSize = this.mtu - 3; // Conservative estimate
-        console.log(`Sending packet of ${packet.length} bytes, maxPayloadSize=${maxPayloadSize}`);
+        //console.log(`Sending packet of ${packet.length} bytes, maxPayloadSize=${maxPayloadSize}`);
         for (let offset = 0; offset < packet.length; offset += maxPayloadSize) {
             const chunk = packet.slice(offset, Math.min(offset + maxPayloadSize, packet.length));
             const base64Chunk = uint8ArrayToBase64(chunk);
-            console.log(`Writing chunk at offset ${offset}, size ${chunk.length}`);
+            //console.log(`Writing chunk at offset ${offset}, size ${chunk.length}`);
             await this.characteristic.writeWithoutResponse(base64Chunk);
-            console.log(`Chunk written`);
+            //console.log(`Chunk written`);
         }
 
         // Wait for response
-        console.log(`All chunks sent, awaiting response...`);
+        //console.log(`All chunks sent, awaiting response...`);
         const response = await responsePromise;
-        console.log(`Response received, length=${response.length}`);
+        //console.log(`Response received, length=${response.length}`);
 
         // Parse response - header is parsed for validation but payload is extracted by offset
         parseSmpHeader(response);
@@ -590,9 +590,22 @@ export class McuMgrClient {
                 payload.len = totalLength;
                 payload.image = imageIndex;
                 payload.sha = Uint8Array.from(sha256Hash);
+
+                // console.log(`Sending first image chunk: ${JSON.stringify(payload.data)}`);
             }
 
-            console.log(`Sending image chunk: offset=${offset}, size=${chunkSize}`);
+            // Check if chunk contains the specific byte sequence
+            // const chunkHex = uint8ArrayToHex(chunk);
+            // console.log(`Chunk offset=${offset}, size=${chunkSize}, data=${chunkHex}`);
+            // if (chunkHex.includes('0d4606462ef0d0fc')) {
+            //     console.log(`Found target sequence! Full payload: ${JSON.stringify({
+            //         ...payload,
+            //         data: chunkHex,
+            //         sha: payload.sha ? uint8ArrayToHex(payload.sha) : undefined
+            //     })}`);
+            // }
+
+            //console.log(`Sending image chunk: offset=${offset}, size=${chunkSize}`);
             const response = await this.sendRequest(
                 SmpOp.WRITE_REQUEST,
                 SmpGroup.IMAGE,
@@ -600,7 +613,7 @@ export class McuMgrClient {
                 payload,
                 10000 // Longer timeout for uploads
             );
-            console.log(`Send complete`);
+            //console.log(`Send complete`);
 
             if (response.rc && response.rc !== 0) {
                 throw new Error(`Image upload error at offset ${offset}: rc=${response.rc}`);
@@ -612,6 +625,7 @@ export class McuMgrClient {
 
             // Server may respond with a different offset (e.g., to continue broken upload)
             if (response.off !== undefined) {
+                // console.log(`Server asked for a new offset! ${response.off}`);
                 offset = response.off;
             } else {
                 offset += chunkSize;
