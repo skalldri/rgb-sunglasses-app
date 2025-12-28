@@ -3,7 +3,7 @@ import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_CUSTOM_COLOR, BLE_GATT
 import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Link } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button, KeyboardAvoidingView, Platform, ScrollView, Switch, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -16,20 +16,140 @@ const MCUMGR_CHARACTERISTIC_UUID = "da2e7828-fbce-4e01-ae9e-261174997c48";
 export default function DeviceStateScreen() {
     const { selectedDevice, setSelectedDevice } = useBluetooth();
     const tabBarHeight = useBottomTabBarHeight();
-    const [charValues, setCharValues] = useState<Record<string, any>>({});
+
+    // Local state for tracking pending input values (before BLE write)
+    const [pendingValues, setPendingValues] = useState<Record<string, string>>({});
+    // Track which device we've initialized for to avoid re-initializing on every update
+    const [initializedDeviceId, setInitializedDeviceId] = useState<string | null>(null);
 
     if (selectedDevice != null) {
-        console.log(`Connected to device: ${selectedDevice.name}`);
+        console.log(`Connected to device: ${selectedDevice.name} `);
     }
+
+    // Initialize pendingValues only when device changes (not on every characteristic update)
+    useEffect(() => {
+        if (!selectedDevice) {
+            setInitializedDeviceId(null);
+            setPendingValues({});
+            return;
+        }
+
+        // Only initialize if this is a new device
+        if (selectedDevice.mac === initializedDeviceId) {
+            console.log(`Device ${selectedDevice.mac} already initialized, skipping`);
+            return;
+        }
+
+        const initialValues: Record<string, string> = {};
+        Object.entries(selectedDevice.characteristicsByService).forEach(([serviceUuid, chars]) => {
+            Object.entries(chars).forEach(([charUuid, charInfo]) => {
+                // Only initialize for text/numeric inputs (not boolean or color)
+                if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S && charInfo.value) {
+                    try {
+                        initialValues[charUuid] = atob(charInfo.value);
+                    } catch (e) {
+                        console.log(`Error decoding UTF8 value for ${charUuid}:`, e);
+                    }
+                } else if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32 && charInfo.value) {
+                    try {
+                        const decoded = atob(charInfo.value);
+                        const value = (decoded.charCodeAt(0) & 0xFF) |
+                            ((decoded.charCodeAt(1) & 0xFF) << 8) |
+                            ((decoded.charCodeAt(2) & 0xFF) << 16) |
+                            ((decoded.charCodeAt(3) & 0xFF) << 24);
+                        initialValues[charUuid] = String(value);
+                    } catch (e) {
+                        console.log(`Error decoding UINT32 value for ${charUuid}:`, e);
+                    }
+                }
+            });
+        });
+
+        setPendingValues(initialValues);
+        setInitializedDeviceId(selectedDevice.mac);
+    }, [initializedDeviceId, selectedDevice, selectedDevice?.mac]);
+
+    // Helper to find which service contains a characteristic
+    const findServiceUuidForChar = (charUuid: string): string | undefined => {
+        if (!selectedDevice) return undefined;
+        return Object.keys(selectedDevice.characteristicsByService).find(
+            svc => selectedDevice.characteristicsByService[svc][charUuid]
+        );
+    };
+
+    // Helper to update characteristic value in context (optimistic update)
+    const updateCharValue = (charUuid: string, newValue: string, charInfo: CharacteristicInfo) => {
+        if (!selectedDevice) return;
+        const serviceUuid = findServiceUuidForChar(charUuid);
+        if (!serviceUuid) return;
+
+        const updatedDevice = {
+            ...selectedDevice,
+            characteristicsByService: {
+                ...selectedDevice.characteristicsByService,
+                [serviceUuid]: {
+                    ...selectedDevice.characteristicsByService[serviceUuid],
+                    [charUuid]: {
+                        ...selectedDevice.characteristicsByService[serviceUuid][charUuid],
+                        value: newValue
+                    }
+                }
+            }
+        };
+        console.log(`CharacteristicInfo updated: ${JSON.stringify(updatedDevice.characteristicsByService[serviceUuid][charUuid])} `)
+        setSelectedDevice(updatedDevice);
+    };
+
+    // Helper to set isUpdateInProgress flag
+    const setCharUpdateInProgress = (charUuid: string, inProgress: boolean) => {
+        if (!selectedDevice) return;
+        const serviceUuid = findServiceUuidForChar(charUuid);
+        if (!serviceUuid) return;
+
+        const updatedDevice = {
+            ...selectedDevice,
+            characteristicsByService: {
+                ...selectedDevice.characteristicsByService,
+                [serviceUuid]: {
+                    ...selectedDevice.characteristicsByService[serviceUuid],
+                    [charUuid]: {
+                        ...selectedDevice.characteristicsByService[serviceUuid][charUuid],
+                        isUpdateInProgress: inProgress
+                    }
+                }
+            }
+        };
+        setSelectedDevice(updatedDevice);
+    };
+
+    // Helper to write characteristic value to BLE with full promise chain
+    const writeCharValue = (charUuid: string, charInfo: CharacteristicInfo, newEncodedValue: string, previousEncodedValue: string) => {
+        setCharUpdateInProgress(charUuid, true);
+
+        charInfo.characteristic.writeWithResponse(newEncodedValue)
+            .then(() => {
+                updateCharValue(charUuid, newEncodedValue, charInfo);
+                setPendingValues(prev => ({ ...prev, [charUuid]: atob(newEncodedValue) }));
+            })
+            .catch((error) => {
+                console.log(`Error writing value to characteristic ${charUuid}: ${error} `);
+                // Revert value on error
+                updateCharValue(charUuid, previousEncodedValue, charInfo);
+                setPendingValues(prev => ({ ...prev, [charUuid]: atob(previousEncodedValue) }));
+            })
+            .finally(() => {
+                setCharUpdateInProgress(charUuid, false);
+            });
+    };
 
     function renderCharacteristicInput(charUuid: string, charInfo: CharacteristicInfo) {
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_BOOLEAN) {
-            // Decode the boolean value from the characteristic if available
-            let initialValue = false;
-            if (charInfo.value && charValues[charUuid] === undefined) {
+            // Decode the boolean value from the characteristic
+            let displayValue = false;
+            if (charInfo.value) {
                 try {
                     const decoded = atob(charInfo.value);
-                    initialValue = decoded.charCodeAt(0) !== 0;
+                    displayValue = decoded.charCodeAt(0) !== 0;
                 } catch (e) {
                     console.log('Error decoding boolean value:', e);
                 }
@@ -37,58 +157,25 @@ export default function DeviceStateScreen() {
 
             return (
                 <Switch
-                    value={charValues[charUuid] ?? initialValue}
+                    value={displayValue}
                     disabled={charInfo.isUpdateInProgress}
                     onValueChange={(value) => {
-                        console.log(`Toggle changed to: ${value}`);
-                        setCharValues(prev => ({ ...prev, [charUuid]: value }));
+                        console.log(`Toggle changed to: ${value} `);
 
-                        // Set update in progress
-                        if (selectedDevice) {
-                            const updatedDevice = { ...selectedDevice };
-                            const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
-                                svc => updatedDevice.characteristicsByService[svc][charUuid]
-                            );
-                            if (serviceUuid) {
-                                updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = true;
-                                setSelectedDevice(updatedDevice);
-                            }
-                        }
-
+                        const previousValue = charInfo.value ?? '';
                         const boolByte = value ? 1 : 0;
                         const encoded = btoa(String.fromCharCode(boolByte));
-                        charInfo.characteristic.writeWithResponse(encoded).then(() => {
-                            console.log(`Wrote boolean value to characteristic ${charUuid}`);
-                        }).catch((error) => {
-                            console.log(`Error writing boolean value to characteristic ${charUuid}: ${error}`);
-                        }).finally(() => {
-                            // Clear update in progress
-                            if (selectedDevice) {
-                                const updatedDevice = { ...selectedDevice };
-                                const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
-                                    svc => updatedDevice.characteristicsByService[svc][charUuid]
-                                );
-                                if (serviceUuid) {
-                                    updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = false;
-                                    setSelectedDevice(updatedDevice);
-                                }
-                            }
-                        });
+
+                        // Write to BLE - writeCharValue will update on success and revert on failure
+                        writeCharValue(charUuid, charInfo, encoded, previousValue);
                     }}
                 />
             );
         }
 
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
-            // Decode the UTF8 string value from the characteristic if available
-            let initialValue = '';
-            if (charInfo.value && charValues[charUuid] === undefined) {
-                try {
-                    initialValue = atob(charInfo.value);
-                } catch (e) {
-                    console.log('Error decoding UTF8 value:', e);
-                }
-            }
+            // Use local pending value during editing
+            const displayValue = pendingValues[charUuid] ?? '';
 
             return (
                 <TextInput
@@ -104,64 +191,23 @@ export default function DeviceStateScreen() {
                     placeholder="Enter value"
                     placeholderTextColor="#888"
                     editable={!charInfo.isUpdateInProgress}
-                    value={charValues[charUuid] ?? initialValue}
+                    value={displayValue}
                     onChangeText={(text) => {
-                        console.log(`Text changed to: ${text}`);
-                        setCharValues(prev => ({ ...prev, [charUuid]: text }));
+                        // Update local state only - don't update BLE value yet
+                        setPendingValues(prev => ({ ...prev, [charUuid]: text }));
                     }}
                     onSubmitEditing={() => {
-                        // Set update in progress
-                        if (selectedDevice) {
-                            const updatedDevice = { ...selectedDevice };
-                            const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
-                                svc => updatedDevice.characteristicsByService[svc][charUuid]
-                            );
-                            if (serviceUuid) {
-                                updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = true;
-                                setSelectedDevice(updatedDevice);
-                            }
-                        }
-
-                        const currentValue = charValues[charUuid] ?? initialValue;
-                        const encoded = btoa(currentValue);
-                        charInfo.characteristic.writeWithResponse(encoded).then(() => {
-                            console.log(`Wrote string value to characteristic ${charUuid}`);
-                        }).catch((error) => {
-                            console.log(`Error writing string value to characteristic ${charUuid}: ${error}`);
-                        }).finally(() => {
-                            // Clear update in progress
-                            if (selectedDevice) {
-                                const updatedDevice = { ...selectedDevice };
-                                const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
-                                    svc => updatedDevice.characteristicsByService[svc][charUuid]
-                                );
-                                if (serviceUuid) {
-                                    updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = false;
-                                    setSelectedDevice(updatedDevice);
-                                }
-                            }
-                        });
+                        const previousValue = charInfo.value ?? '';
+                        const encoded = btoa(displayValue);
+                        writeCharValue(charUuid, charInfo, encoded, previousValue);
                     }}
                 />
             );
         }
 
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32) {
-            // Decode the UINT32 value from the characteristic if available
-            let initialValue = '';
-            if (charInfo.value && charValues[charUuid] === undefined) {
-                try {
-                    const decoded = atob(charInfo.value);
-                    // Convert bytes to uint32 (little-endian)
-                    const value = (decoded.charCodeAt(0) & 0xFF) |
-                        ((decoded.charCodeAt(1) & 0xFF) << 8) |
-                        ((decoded.charCodeAt(2) & 0xFF) << 16) |
-                        ((decoded.charCodeAt(3) & 0xFF) << 24);
-                    initialValue = value.toString();
-                } catch (e) {
-                    console.log('Error decoding UINT32 value:', e);
-                }
-            }
+            // Use local pending value during editing
+            const displayValue = pendingValues[charUuid] ?? '';
 
             return (
                 <TextInput
@@ -178,28 +224,17 @@ export default function DeviceStateScreen() {
                     placeholderTextColor="#888"
                     keyboardType="numeric"
                     editable={!charInfo.isUpdateInProgress}
-                    value={charValues[charUuid] ?? initialValue}
+                    value={displayValue}
                     onChangeText={(text) => {
                         // Only allow numeric input
                         const numericText = text.replace(/[^0-9]/g, '');
-                        console.log(`Number changed to: ${numericText}`);
-                        setCharValues(prev => ({ ...prev, [charUuid]: numericText }));
+                        // Update local state only - don't update BLE value yet
+                        setPendingValues(prev => ({ ...prev, [charUuid]: numericText }));
                     }}
                     onSubmitEditing={() => {
-                        // Set update in progress
-                        if (selectedDevice) {
-                            const updatedDevice = { ...selectedDevice };
-                            const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
-                                svc => updatedDevice.characteristicsByService[svc][charUuid]
-                            );
-                            if (serviceUuid) {
-                                updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = true;
-                                setSelectedDevice(updatedDevice);
-                            }
-                        }
+                        const previousValue = charInfo.value ?? '';
+                        const numericValue = parseInt(displayValue, 10);
 
-                        const currentValue = charValues[charUuid] ?? initialValue;
-                        const numericValue = parseInt(currentValue, 10);
                         if (!isNaN(numericValue)) {
                             // Convert uint32 to 4 bytes (little-endian)
                             const byte0 = numericValue & 0xFF;
@@ -207,23 +242,10 @@ export default function DeviceStateScreen() {
                             const byte2 = (numericValue >> 16) & 0xFF;
                             const byte3 = (numericValue >> 24) & 0xFF;
                             const encoded = btoa(String.fromCharCode(byte0, byte1, byte2, byte3));
-                            charInfo.characteristic.writeWithResponse(encoded).then(() => {
-                                console.log(`Wrote UINT32 value to characteristic ${charUuid}`);
-                            }).catch((error) => {
-                                console.log(`Error writing UINT32 value to characteristic ${charUuid}: ${error}`);
-                            }).finally(() => {
-                                // Clear update in progress
-                                if (selectedDevice) {
-                                    const updatedDevice = { ...selectedDevice };
-                                    const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
-                                        svc => updatedDevice.characteristicsByService[svc][charUuid]
-                                    );
-                                    if (serviceUuid) {
-                                        updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = false;
-                                        setSelectedDevice(updatedDevice);
-                                    }
-                                }
-                            });
+
+                            writeCharValue(charUuid, charInfo, encoded, previousValue);
+                        } else {
+                            console.log(`Invalid number input: ${displayValue} `);
                         }
                     }}
                 />
@@ -262,7 +284,7 @@ export default function DeviceStateScreen() {
                             borderColor: '#ccc',
                         }}
                     />
-                    <Link href={`/color-picker-modal?r=${r}&g=${g}&b=${b}&charUuid=${charUuid}`} asChild>
+                    <Link href={`/ color - picker - modal ? r = ${r}& g=${g}& b=${b}& charUuid=${charUuid} `} asChild>
                         <Button title="Pick Color" onPress={() => { }} />
                     </Link>
                 </View>
@@ -289,10 +311,10 @@ export default function DeviceStateScreen() {
                     {
                         selectedDevice?.services.map((service, index) => {
                             return (
-                                <View key={service.uuid + `-service-details-` + String(index)}>
+                                <View key={service.uuid + `- service - details - ` + String(index)}>
                                     <ThemedText
-                                        key={service.uuid + `-` + String(index)}>
-                                        {`Service ` + getServiceName(service.uuid) + `:`}
+                                        key={service.uuid + `- ` + String(index)}>
+                                        {`Service ` + getServiceName(service.uuid) + `: `}
                                     </ThemedText>
 
                                     {Object.entries(selectedDevice?.characteristicsByService[service.uuid] ?? {}).map(([charUuid, charInfo], charIndex) => {
@@ -300,7 +322,7 @@ export default function DeviceStateScreen() {
 
                                         return (
                                             <View
-                                                key={`${service.uuid}-char-${charIndex}`}
+                                                key={`${service.uuid} -char - ${charIndex} `}
                                                 style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 16, marginVertical: 4 }}>
                                                 <ThemedText style={{ fontSize: 12, flexShrink: 1, marginRight: 8 }}>
                                                     {charInfo.name ?? getCharacteristicName(charUuid)}
