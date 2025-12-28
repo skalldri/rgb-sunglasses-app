@@ -3,8 +3,8 @@ import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_CUSTOM_COLOR, BLE_GATT
 import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Link } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { Button, KeyboardAvoidingView, Platform, ScrollView, Switch, TextInput, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Button, KeyboardAvoidingView, Platform, ScrollView, Switch, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // UUIDs for McuMgr service and characteristic
@@ -21,6 +21,10 @@ export default function DeviceStateScreen() {
     const [pendingValues, setPendingValues] = useState<Record<string, string>>({});
     // Track which device we've initialized for to avoid re-initializing on every update
     const [initializedDeviceId, setInitializedDeviceId] = useState<string | null>(null);
+    // Track write status for each characteristic (success/error/null)
+    const [writeStatus, setWriteStatus] = useState<Record<string, 'success' | 'error' | null>>({});
+    // Track animation values for color fade
+    const fadeAnims = useRef<Record<string, Animated.Value>>({});
 
     if (selectedDevice != null) {
         console.log(`Connected to device: ${selectedDevice.name} `);
@@ -68,6 +72,30 @@ export default function DeviceStateScreen() {
         setPendingValues(initialValues);
         setInitializedDeviceId(selectedDevice.mac);
     }, [initializedDeviceId, selectedDevice, selectedDevice?.mac]);
+
+    // Helper to trigger write status animation
+    const triggerStatusAnimation = (charUuid: string, status: 'success' | 'error') => {
+        // Initialize fade animation if not exists
+        if (!fadeAnims.current[charUuid]) {
+            fadeAnims.current[charUuid] = new Animated.Value(1);
+        }
+
+        // Set status
+        setWriteStatus(prev => ({ ...prev, [charUuid]: status }));
+
+        // Reset animation value to 1 (full color)
+        fadeAnims.current[charUuid].setValue(1);
+
+        // Fade to 0 over 1 second
+        Animated.timing(fadeAnims.current[charUuid], {
+            toValue: 0,
+            duration: 1000,
+            useNativeDriver: false,
+        }).start(() => {
+            // Clear status after animation completes
+            setWriteStatus(prev => ({ ...prev, [charUuid]: null }));
+        });
+    };
 
     // Helper to find which service contains a characteristic
     const findServiceUuidForChar = (charUuid: string): string | undefined => {
@@ -130,12 +158,14 @@ export default function DeviceStateScreen() {
             .then(() => {
                 updateCharValue(charUuid, newEncodedValue, charInfo);
                 setPendingValues(prev => ({ ...prev, [charUuid]: atob(newEncodedValue) }));
+                triggerStatusAnimation(charUuid, 'success');
             })
             .catch((error) => {
                 console.log(`Error writing value to characteristic ${charUuid}: ${error} `);
                 // Revert value on error
                 updateCharValue(charUuid, previousEncodedValue, charInfo);
                 setPendingValues(prev => ({ ...prev, [charUuid]: atob(previousEncodedValue) }));
+                triggerStatusAnimation(charUuid, 'error');
             })
             .finally(() => {
                 setCharUpdateInProgress(charUuid, false);
@@ -284,7 +314,7 @@ export default function DeviceStateScreen() {
                             borderColor: '#ccc',
                         }}
                     />
-                    <Link href={`/ color - picker - modal ? r = ${r}& g=${g}& b=${b}& charUuid=${charUuid} `} asChild>
+                    <Link href={`/color-picker-modal?r=${r}&g=${g}&b=${b}&charUuid=${charUuid}`} asChild>
                         <Button title="Pick Color" onPress={() => { }} />
                     </Link>
                 </View>
@@ -320,13 +350,25 @@ export default function DeviceStateScreen() {
                                     {Object.entries(selectedDevice?.characteristicsByService[service.uuid] ?? {}).map(([charUuid, charInfo], charIndex) => {
                                         const isMcuMgrCharacteristic = service.uuid === MCUMGR_SERVICE_UUID && charUuid === MCUMGR_CHARACTERISTIC_UUID;
 
+                                        // Get animated color for this characteristic
+                                        const status = writeStatus[charUuid];
+                                        const fadeValue = fadeAnims.current[charUuid];
+
+                                        // Interpolate color based on status and fade value
+                                        const textColor = status && fadeValue
+                                            ? fadeValue.interpolate({
+                                                inputRange: [0, 1],
+                                                outputRange: ['#ffffff', status === 'success' ? '#00ff00' : '#ff0000']
+                                            })
+                                            : '#ffffff';
+
                                         return (
                                             <View
                                                 key={`${service.uuid} -char - ${charIndex} `}
                                                 style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 16, marginVertical: 4 }}>
-                                                <ThemedText style={{ fontSize: 12, flexShrink: 1, marginRight: 8 }}>
+                                                <Animated.Text style={{ fontSize: 12, flexShrink: 1, marginRight: 8, color: textColor }}>
                                                     {charInfo.name ?? getCharacteristicName(charUuid)}
-                                                </ThemedText>
+                                                </Animated.Text>
                                                 {isMcuMgrCharacteristic && (
                                                     <Link href="/firmware-update-modal" asChild>
                                                         <Button title="Update" onPress={() => { }} />
