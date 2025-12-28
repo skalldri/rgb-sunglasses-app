@@ -1,9 +1,37 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import Slider from '@react-native-community/slider';
-import { Link } from 'expo-router';
+import { Link, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { GestureResponderEvent, StyleSheet, View } from 'react-native';
+
+// Convert RGB to HSV
+function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const delta = max - min;
+
+    let h = 0;
+    if (delta !== 0) {
+        if (max === r) {
+            h = 60 * (((g - b) / delta) % 6);
+        } else if (max === g) {
+            h = 60 * ((b - r) / delta + 2);
+        } else {
+            h = 60 * ((r - g) / delta + 4);
+        }
+    }
+    if (h < 0) h += 360;
+
+    const s = max === 0 ? 0 : delta / max;
+    const v = max;
+
+    return [h, s, v];
+}
 
 // Convert HSV to RGB
 function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
@@ -30,11 +58,21 @@ const WHEEL_SIZE = 250;
 const WHEEL_RADIUS = WHEEL_SIZE / 2;
 
 export default function ColorPickerModal() {
-    const [hue, setHue] = useState(0); // 0-360
-    const [saturation, setSaturation] = useState(1); // 0-1
+    const params = useLocalSearchParams();
+
+    // Parse RGB values from query parameters
+    const initialR = params.r ? parseInt(params.r as string, 10) : 255;
+    const initialG = params.g ? parseInt(params.g as string, 10) : 0;
+    const initialB = params.b ? parseInt(params.b as string, 10) : 0;
+
+    // Convert initial RGB to HSV
+    const [initialHue, initialSaturation, initialBrightness] = rgbToHsv(initialR, initialG, initialB);
+
+    const [hue, setHue] = useState(initialHue);
+    const [saturation, setSaturation] = useState(initialSaturation);
     const brightness = 1; // Fixed at full brightness
 
-    const [rgb, setRgb] = useState<[number, number, number]>(() => hsvToRgb(0, 1, 1));
+    const [rgb, setRgb] = useState<[number, number, number]>([initialR, initialG, initialB]);
     const wheelRef = useRef<View>(null);
     const wheelLayout = useRef<{ x: number; y: number } | null>(null);
 
