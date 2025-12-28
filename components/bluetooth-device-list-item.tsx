@@ -1,5 +1,5 @@
 import { getCharacteristicName, getDescriptorName, getServiceName, getUuidForCpfDescriptor, getUuidForCudDescriptor } from "@/constants/bluetooth";
-import { useBluetooth } from "@/context/bluetooth-context";
+import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
 import { bleManager } from "@/hooks/use-ble";
 import { useRef, useState } from "react";
 import { ActivityIndicator, Button, View } from "react-native";
@@ -57,23 +57,22 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                             const services = await deviceConnection.services();
 
                             // Build mapping of service UUID -> characteristics (by UUID)
-                            const characteristicsByService: Record<string, Record<string, any>> = {};
+                            const characteristicsByService: Record<string, Record<string, CharacteristicInfo>> = {};
                             if (services) {
                                 for (const service of services) {
                                     const characteristics = await deviceConnection.characteristicsForService(service.uuid);
-                                    const characteristicInfos: Record<string, any> = {};
+                                    const characteristicInfos: Record<string, CharacteristicInfo> = {};
 
                                     for (const characteristic of characteristics) {
                                         const descriptors = await service.descriptorsForCharacteristic(characteristic.uuid);
                                         console.log(`Characteristic: ${getCharacteristicName(characteristic.uuid)}, Descriptors: ${descriptors.length}`);
 
-
-
-                                        const charInfo: any = {
+                                        const charInfo: CharacteristicInfo = {
                                             characteristic,
                                             value: null,
                                             name: null,
                                             cpfFormat: null,
+                                            isUpdateInProgress: false,
                                         };
 
                                         for (const descriptor of descriptors) {

@@ -1,14 +1,21 @@
 import { McuMgrClient } from "@/services/mcumgr";
 import { createContext, ReactNode, useContext, useState } from "react";
-import { Device, Service } from "react-native-ble-plx";
+import { Characteristic, Device, Service } from "react-native-ble-plx";
 
+export interface CharacteristicInfo {
+    characteristic: Characteristic;
+    value: string | null;
+    name: string | null;
+    cpfFormat: number | null;
+    isUpdateInProgress: boolean;
+}
 
 export type BluetoothContextDevice = {
     name: string;
     mac: string;
     device: Device;
     services: Service[];
-    characteristicsByService: Record<string, Record<string, any>>;
+    characteristicsByService: Record<string, Record<string, CharacteristicInfo>>;
     mcuMgrClient?: McuMgrClient;
 };
 

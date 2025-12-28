@@ -1,6 +1,6 @@
 import { ThemedText } from "@/components/themed-text";
 import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_CUSTOM_COLOR, BLE_GATT_CPF_FORMAT_UINT32, BLE_GATT_CPF_FORMAT_UTF8S, getCharacteristicName, getServiceName } from "@/constants/bluetooth";
-import { useBluetooth } from "@/context/bluetooth-context";
+import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Link } from "expo-router";
 import React, { useState } from "react";
@@ -14,7 +14,7 @@ const MCUMGR_CHARACTERISTIC_UUID = "da2e7828-fbce-4e01-ae9e-261174997c48";
 
 
 export default function DeviceStateScreen() {
-    const { selectedDevice } = useBluetooth();
+    const { selectedDevice, setSelectedDevice } = useBluetooth();
     const tabBarHeight = useBottomTabBarHeight();
     const [charValues, setCharValues] = useState<Record<string, any>>({});
 
@@ -22,7 +22,7 @@ export default function DeviceStateScreen() {
         console.log(`Connected to device: ${selectedDevice.name}`);
     }
 
-    function renderCharacteristicInput(charUuid: string, charInfo: any) {
+    function renderCharacteristicInput(charUuid: string, charInfo: CharacteristicInfo) {
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_BOOLEAN) {
             // Decode the boolean value from the characteristic if available
             let initialValue = false;
@@ -38,9 +38,42 @@ export default function DeviceStateScreen() {
             return (
                 <Switch
                     value={charValues[charUuid] ?? initialValue}
+                    disabled={charInfo.isUpdateInProgress}
                     onValueChange={(value) => {
                         console.log(`Toggle changed to: ${value}`);
                         setCharValues(prev => ({ ...prev, [charUuid]: value }));
+
+                        // Set update in progress
+                        if (selectedDevice) {
+                            const updatedDevice = { ...selectedDevice };
+                            const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
+                                svc => updatedDevice.characteristicsByService[svc][charUuid]
+                            );
+                            if (serviceUuid) {
+                                updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = true;
+                                setSelectedDevice(updatedDevice);
+                            }
+                        }
+
+                        const boolByte = value ? 1 : 0;
+                        const encoded = btoa(String.fromCharCode(boolByte));
+                        charInfo.characteristic.writeWithResponse(encoded).then(() => {
+                            console.log(`Wrote boolean value to characteristic ${charUuid}`);
+                        }).catch((error) => {
+                            console.log(`Error writing boolean value to characteristic ${charUuid}: ${error}`);
+                        }).finally(() => {
+                            // Clear update in progress
+                            if (selectedDevice) {
+                                const updatedDevice = { ...selectedDevice };
+                                const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
+                                    svc => updatedDevice.characteristicsByService[svc][charUuid]
+                                );
+                                if (serviceUuid) {
+                                    updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = false;
+                                    setSelectedDevice(updatedDevice);
+                                }
+                            }
+                        });
                     }}
                 />
             );
@@ -70,10 +103,44 @@ export default function DeviceStateScreen() {
                     }}
                     placeholder="Enter value"
                     placeholderTextColor="#888"
+                    editable={!charInfo.isUpdateInProgress}
                     value={charValues[charUuid] ?? initialValue}
                     onChangeText={(text) => {
                         console.log(`Text changed to: ${text}`);
                         setCharValues(prev => ({ ...prev, [charUuid]: text }));
+                    }}
+                    onSubmitEditing={() => {
+                        // Set update in progress
+                        if (selectedDevice) {
+                            const updatedDevice = { ...selectedDevice };
+                            const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
+                                svc => updatedDevice.characteristicsByService[svc][charUuid]
+                            );
+                            if (serviceUuid) {
+                                updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = true;
+                                setSelectedDevice(updatedDevice);
+                            }
+                        }
+
+                        const currentValue = charValues[charUuid] ?? initialValue;
+                        const encoded = btoa(currentValue);
+                        charInfo.characteristic.writeWithResponse(encoded).then(() => {
+                            console.log(`Wrote string value to characteristic ${charUuid}`);
+                        }).catch((error) => {
+                            console.log(`Error writing string value to characteristic ${charUuid}: ${error}`);
+                        }).finally(() => {
+                            // Clear update in progress
+                            if (selectedDevice) {
+                                const updatedDevice = { ...selectedDevice };
+                                const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
+                                    svc => updatedDevice.characteristicsByService[svc][charUuid]
+                                );
+                                if (serviceUuid) {
+                                    updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = false;
+                                    setSelectedDevice(updatedDevice);
+                                }
+                            }
+                        });
                     }}
                 />
             );
@@ -110,12 +177,54 @@ export default function DeviceStateScreen() {
                     placeholder="Enter number"
                     placeholderTextColor="#888"
                     keyboardType="numeric"
+                    editable={!charInfo.isUpdateInProgress}
                     value={charValues[charUuid] ?? initialValue}
                     onChangeText={(text) => {
                         // Only allow numeric input
                         const numericText = text.replace(/[^0-9]/g, '');
                         console.log(`Number changed to: ${numericText}`);
                         setCharValues(prev => ({ ...prev, [charUuid]: numericText }));
+                    }}
+                    onSubmitEditing={() => {
+                        // Set update in progress
+                        if (selectedDevice) {
+                            const updatedDevice = { ...selectedDevice };
+                            const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
+                                svc => updatedDevice.characteristicsByService[svc][charUuid]
+                            );
+                            if (serviceUuid) {
+                                updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = true;
+                                setSelectedDevice(updatedDevice);
+                            }
+                        }
+
+                        const currentValue = charValues[charUuid] ?? initialValue;
+                        const numericValue = parseInt(currentValue, 10);
+                        if (!isNaN(numericValue)) {
+                            // Convert uint32 to 4 bytes (little-endian)
+                            const byte0 = numericValue & 0xFF;
+                            const byte1 = (numericValue >> 8) & 0xFF;
+                            const byte2 = (numericValue >> 16) & 0xFF;
+                            const byte3 = (numericValue >> 24) & 0xFF;
+                            const encoded = btoa(String.fromCharCode(byte0, byte1, byte2, byte3));
+                            charInfo.characteristic.writeWithResponse(encoded).then(() => {
+                                console.log(`Wrote UINT32 value to characteristic ${charUuid}`);
+                            }).catch((error) => {
+                                console.log(`Error writing UINT32 value to characteristic ${charUuid}: ${error}`);
+                            }).finally(() => {
+                                // Clear update in progress
+                                if (selectedDevice) {
+                                    const updatedDevice = { ...selectedDevice };
+                                    const serviceUuid = Object.keys(updatedDevice.characteristicsByService).find(
+                                        svc => updatedDevice.characteristicsByService[svc][charUuid]
+                                    );
+                                    if (serviceUuid) {
+                                        updatedDevice.characteristicsByService[serviceUuid][charUuid].isUpdateInProgress = false;
+                                        setSelectedDevice(updatedDevice);
+                                    }
+                                }
+                            });
+                        }
                     }}
                 />
             );
