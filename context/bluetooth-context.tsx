@@ -15,6 +15,8 @@ export type BluetoothContextDevice = {
 type BluetoothContextType = {
     selectedDevice: BluetoothContextDevice | null;
     setSelectedDevice: (device: BluetoothContextDevice | null) => void;
+    isScanning: boolean;
+    setIsScanning: (scanning: boolean) => void;
 };
 
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -22,9 +24,10 @@ const BluetoothContext = createContext<BluetoothContextType | undefined>(undefin
 
 export function BluetoothProvider({ children }: { children: ReactNode }) {
     const [selectedDevice, setSelectedDevice] = useState<BluetoothContextDevice | null>(null);
+    const [isScanning, setIsScanning] = useState<boolean>(false);
 
     return (
-        <BluetoothContext.Provider value={{ selectedDevice, setSelectedDevice }}>
+        <BluetoothContext.Provider value={{ selectedDevice, setSelectedDevice, isScanning, setIsScanning }}>
             {children}
         </BluetoothContext.Provider>
     );

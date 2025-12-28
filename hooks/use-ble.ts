@@ -1,8 +1,21 @@
 import * as ExpoDevice from "expo-device";
 import { PermissionsAndroid, Platform } from "react-native";
-import { BleManager } from "react-native-ble-plx";
+import { BleManager, BleManagerOptions, BleRestoredState } from "react-native-ble-plx";
 
-export const bleManager = new BleManager();
+const bleManagerOptions: BleManagerOptions = {
+    restoreStateIdentifier: 'bleManagerRestoredState',
+    restoreStateFunction: (bleRestoredState: BleRestoredState | null) => {
+        if (bleRestoredState == null) {
+            console.log(`No restored state for BleManager`);
+            // BleManager was constructed for the first time.
+        } else {
+            console.log(`State was restored! ${JSON.stringify(bleRestoredState)}`);
+            // BleManager was restored. Check `bleRestoredState.connectedPeripherals` property.
+        }
+    },
+};
+
+export const bleManager = new BleManager(bleManagerOptions);
 
 const requestAndroid31Permissions = async () => {
     const bluetoothScanPermission = await PermissionsAndroid.request(

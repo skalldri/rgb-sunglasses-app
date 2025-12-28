@@ -14,7 +14,7 @@ interface Props {
 
 export default function BluetoothDeviceListItem({ key, deviceName, macAddress }: Props) {
 
-    const { selectedDevice, setSelectedDevice } = useBluetooth();
+    const { selectedDevice, setSelectedDevice, setIsScanning } = useBluetooth();
     const [canPress, setCanPress] = useState<boolean>(true); // Prevent clicking the button while the long pairing process is active
     const disconnectSubscriptionRef = useRef<Subscription | null>(null);
 
@@ -138,6 +138,7 @@ export default function BluetoothDeviceListItem({ key, deviceName, macAddress }:
                             });
 
                             bleManager.stopDeviceScan();
+                            setIsScanning(false);
 
                             console.log(`Pairing complete`);
                             setCanPress(true);

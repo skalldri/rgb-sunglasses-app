@@ -5,6 +5,7 @@ import { Image } from 'expo-image';
 import { useState } from "react";
 import { Button, ScrollView, StyleSheet } from 'react-native';
 
+import { useBluetooth } from "@/context/bluetooth-context";
 import { bleManager, requestPermissions } from "@/hooks/use-ble";
 import { LogLevel } from "react-native-ble-plx";
 
@@ -21,7 +22,7 @@ export default function BluetoothScreen() {
     // 2. The HTML / DOM is declared such that it depends on the state variable
     // 3. The application modifies the state variable using the declared function
     // 4. React automatically re-renders the app using the updated state variables 
-    const [isScanning, setIsScanning] = useState(false);
+    const { isScanning, setIsScanning } = useBluetooth();
     const [devices, setDevices] = useState<BleDevice[]>([]);
 
     /**
@@ -68,26 +69,6 @@ export default function BluetoothScreen() {
         for (const device of connectedDevices) {
             console.log(`Already connected to device: ${device.name ?? 'Unnamed'} (${device.id})`);
         }
-
-        console.log('Bluetooth scan complete');
-        setIsScanning(false);
-    }
-
-    async function DoAlreadyConnectedScan() {
-        console.log('Starting already connected Bluetooth scan...');
-        await requestPermissions();
-
-        bleManager.setLogLevel(LogLevel.Verbose);
-
-        // Check if any devices are already paired with the OS with the "Core Config Service" UUID
-        const connectedDevices = await bleManager.connectedDevices(["12345678-1234-5678-0001-56789abc0000"]);
-        console.log(`Connected Devices: ${connectedDevices}`)
-
-        for (const device of connectedDevices) {
-            console.log(`Already connected to device: ${device.name ?? 'Unnamedr'} (${device.id})`);
-        }
-
-        console.log('Bluetooth scan complete');
     }
 
     return (
@@ -108,11 +89,6 @@ export default function BluetoothScreen() {
                 onPress={DoBluetoothScan}
                 title={isScanning ? "Scanning..." : "Scan for Bluetooth Devices"}
                 disabled={isScanning}
-            />
-
-            <Button
-                onPress={DoAlreadyConnectedScan}
-                title="Already Connected Scan"
             />
 
             <ScrollView>
