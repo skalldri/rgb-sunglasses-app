@@ -117,6 +117,15 @@ export default function BluetoothDeviceListItem({ key, deviceName, macAddress }:
                                 if (device && device.id === macAddress) {
                                     console.log(`Device disconnected: ${deviceName} (${macAddress})`);
 
+                                    // Destroy MCUmgr client FIRST to prevent monitor crash
+                                    if (selectedDevice?.mcuMgrClient) {
+                                        try {
+                                            selectedDevice.mcuMgrClient.destroy();
+                                        } catch (e) {
+                                            console.log('Error destroying MCUmgr client:', e);
+                                        }
+                                    }
+
                                     // Clear selected device
                                     setSelectedDevice(null);
 

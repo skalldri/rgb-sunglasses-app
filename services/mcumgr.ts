@@ -297,6 +297,8 @@ export class McuMgrClient {
     private expectedLength: number = 0;
     private responseResolver: ((data: Uint8Array) => void) | null = null;
     private responseRejecter: ((error: Error) => void) | null = null;
+    private monitorSubscription: any = null;
+    private isDestroyed: boolean = false;
 
     constructor(device: Device) {
         this.device = device;
@@ -328,8 +330,23 @@ export class McuMgrClient {
         }
 
         // Set up notifications for responses
-        await this.characteristic.monitor((error, char) => {
+        this.monitorSubscription = this.characteristic.monitor((error, char) => {
+            console.log('!!!MONITOR CALLED!!!');
+
+            // Ignore all callbacks if client is destroyed
+            if (this.isDestroyed) {
+                return;
+            }
+
             if (error) {
+                // Check if this is a disconnection error - if so, ignore it
+                // The error message typically contains "Disconnected" or the device will be null
+                const errorStr = error?.message || String(error);
+                if (errorStr.includes('Disconnect') || errorStr.includes('disconnect')) {
+                    console.log('SMP monitor: Device disconnected, stopping');
+                    return;
+                }
+
                 console.error('SMP notification error:', error);
                 if (this.responseRejecter) {
                     this.responseRejecter(error);
@@ -355,6 +372,30 @@ export class McuMgrClient {
         } catch (_e) {
             console.warn('MTU negotiation failed, using default:', this.mtu);
         }
+    }
+
+    /**
+     * Cleanup and stop monitoring characteristic
+     */
+    destroy(): void {
+        // Set flag first to prevent any callbacks from processing
+        this.isDestroyed = true;
+
+        if (this.monitorSubscription) {
+            this.monitorSubscription.remove();
+            this.monitorSubscription = null;
+        }
+
+        // Reject any pending responses
+        if (this.responseRejecter) {
+            this.responseRejecter(new Error('Client destroyed'));
+            this.responseRejecter = null;
+            this.responseResolver = null;
+        }
+
+        // Clear buffers
+        this.responseBuffer = new Uint8Array(0);
+        this.expectedLength = 0;
     }
 
     /**

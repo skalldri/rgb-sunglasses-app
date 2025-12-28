@@ -1,3 +1,4 @@
+import { McuMgrClient } from "@/services/mcumgr";
 import { createContext, ReactNode, useContext, useState } from "react";
 import { Device, Service } from "react-native-ble-plx";
 
@@ -8,6 +9,7 @@ export type BluetoothContextDevice = {
     device: Device;
     services: Service[];
     characteristicsByService: Record<string, Record<string, any>>;
+    mcuMgrClient?: McuMgrClient;
 };
 
 type BluetoothContextType = {

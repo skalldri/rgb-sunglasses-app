@@ -55,7 +55,7 @@ interface FirmwarePackage {
 // ============================================================================
 
 export default function FirmwareUpdateModal() {
-    const { selectedDevice } = useBluetooth();
+    const { selectedDevice, setSelectedDevice } = useBluetooth();
     const [client, setClient] = useState<McuMgrClient | null>(null);
     const [isInitializing, setIsInitializing] = useState(true);
     const [imageState, setImageState] = useState<ImageSlot[]>([]);
@@ -125,6 +125,12 @@ export default function FirmwareUpdateModal() {
                 await mcuClient.initialize();
                 setClient(mcuClient);
 
+                // Store client in context for cleanup on disconnect
+                setSelectedDevice({
+                    ...selectedDevice,
+                    mcuMgrClient: mcuClient
+                });
+
                 // Fetch initial image state
                 setStatus('Fetching image state...');
                 const state = await mcuClient.getImageState();
@@ -149,7 +155,14 @@ export default function FirmwareUpdateModal() {
         }
 
         init();
-    }, [selectedDevice]);
+
+        // Cleanup on unmount
+        return () => {
+            if (client) {
+                client.destroy();
+            }
+        };
+    }, [selectedDevice, client]);
 
     async function handleSelectFirmwarePackage() {
         try {
