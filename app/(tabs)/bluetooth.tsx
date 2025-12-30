@@ -2,11 +2,12 @@ import BluetoothDeviceListItem from "@/components/bluetooth-device-list-item";
 import ParallaxScrollView from "@/components/parallax-scroll-view";
 import { ThemedText } from "@/components/themed-text";
 import { Image } from 'expo-image';
-import { useState } from "react";
-import { Button, ScrollView, StyleSheet } from 'react-native';
+import { useCallback, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 
 import { useBluetooth } from "@/context/bluetooth-context";
 import { bleManager, requestPermissions } from "@/hooks/use-ble";
+import { useFocusEffect } from "expo-router";
 import { LogLevel } from "react-native-ble-plx";
 
 type BleDevice = {
@@ -16,12 +17,6 @@ type BleDevice = {
 
 export default function BluetoothScreen() {
 
-    // Declare app state. App "state" is how we build reactive UIs.
-    // 1. State is declared and has an "initial state". Alongside the state variable, 
-    // a modifier function is also declared.
-    // 2. The HTML / DOM is declared such that it depends on the state variable
-    // 3. The application modifies the state variable using the declared function
-    // 4. React automatically re-renders the app using the updated state variables 
     const { isScanning, setIsScanning } = useBluetooth();
     const [devices, setDevices] = useState<BleDevice[]>([]);
 
@@ -33,7 +28,7 @@ export default function BluetoothScreen() {
         return allDevices.findIndex((d) => d.mac === newMac) >= 0;
     }
 
-    async function DoBluetoothScan() {
+    async function startBluetoothScan() {
         console.log('Starting Bluetooth scan...');
         setIsScanning(true);
         setDevices([]);
@@ -83,6 +78,23 @@ export default function BluetoothScreen() {
         }
     }
 
+    function stopBluetoothScan() {
+        console.log('Stopping Bluetooth scan...');
+        bleManager.stopDeviceScan();
+        setIsScanning(false);
+    }
+
+    // Start scanning when the screen is focused, stop when it loses focus
+    useFocusEffect(
+        useCallback(() => {
+            startBluetoothScan();
+
+            return () => {
+                stopBluetoothScan();
+            };
+        }, [])
+    );
+
     return (
         <ParallaxScrollView
             headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -97,11 +109,9 @@ export default function BluetoothScreen() {
                 {`Connect to the RGB Sunglasses`}
             </ThemedText>
 
-            <Button
-                onPress={DoBluetoothScan}
-                title={isScanning ? "Scanning..." : "Scan for Bluetooth Devices"}
-                disabled={isScanning}
-            />
+            {isScanning && (
+                <ActivityIndicator size="large" style={styles.spinner} />
+            )}
 
             <ScrollView>
                 {devices.map(device => (
@@ -127,6 +137,9 @@ const styles = StyleSheet.create({
     stepContainer: {
         gap: 8,
         marginBottom: 8,
+    },
+    spinner: {
+        marginVertical: 16,
     },
     reactLogo: {
         height: 178,

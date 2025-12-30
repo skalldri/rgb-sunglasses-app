@@ -101,12 +101,69 @@ export default function DeviceStateScreen() {
     async function writeCharValue(charUuid: string, newEncodedValue: string, previousEncodedValue: string) {
         const success = await writeToCharacteristic(charUuid, newEncodedValue);
 
+        // Get the characteristic info to determine how to decode the value
+        const charInfo = selectedDevice?.characteristicsByService
+            ? Object.values(selectedDevice.characteristicsByService)
+                .flatMap(chars => Object.entries(chars))
+                .find(([uuid, _]) => uuid === charUuid)?.[1]
+            : null;
+
         if (success) {
-            setPendingValues(prev => ({ ...prev, [charUuid]: atob(newEncodedValue) }));
+            // Decode the value appropriately based on the characteristic type
+            let decodedValue = '';
+            if (charInfo?.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32) {
+                try {
+                    const decoded = atob(newEncodedValue);
+                    const value = (decoded.charCodeAt(0) & 0xFF) |
+                        ((decoded.charCodeAt(1) & 0xFF) << 8) |
+                        ((decoded.charCodeAt(2) & 0xFF) << 16) |
+                        ((decoded.charCodeAt(3) & 0xFF) << 24);
+                    decodedValue = String(value);
+                } catch (e) {
+                    console.log(`Error decoding UINT32 value for ${charUuid}:`, e);
+                    decodedValue = atob(newEncodedValue);
+                }
+            } else if (charInfo?.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
+                try {
+                    decodedValue = atob(newEncodedValue);
+                } catch (e) {
+                    console.log(`Error decoding UTF8 value for ${charUuid}:`, e);
+                    decodedValue = atob(newEncodedValue);
+                }
+            } else {
+                // Fallback for other types (like boolean, which don't use pending values)
+                decodedValue = atob(newEncodedValue);
+            }
+
+            setPendingValues(prev => ({ ...prev, [charUuid]: decodedValue }));
             triggerStatusAnimation(charUuid, 'success');
         } else {
-            // Revert pending value on error
-            setPendingValues(prev => ({ ...prev, [charUuid]: atob(previousEncodedValue) }));
+            // Revert pending value on error - decode the previous value appropriately
+            let decodedPreviousValue = '';
+            if (charInfo?.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32) {
+                try {
+                    const decoded = atob(previousEncodedValue);
+                    const value = (decoded.charCodeAt(0) & 0xFF) |
+                        ((decoded.charCodeAt(1) & 0xFF) << 8) |
+                        ((decoded.charCodeAt(2) & 0xFF) << 16) |
+                        ((decoded.charCodeAt(3) & 0xFF) << 24);
+                    decodedPreviousValue = String(value);
+                } catch (e) {
+                    console.log(`Error decoding previous UINT32 value for ${charUuid}:`, e);
+                    decodedPreviousValue = atob(previousEncodedValue);
+                }
+            } else if (charInfo?.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
+                try {
+                    decodedPreviousValue = atob(previousEncodedValue);
+                } catch (e) {
+                    console.log(`Error decoding previous UTF8 value for ${charUuid}:`, e);
+                    decodedPreviousValue = atob(previousEncodedValue);
+                }
+            } else {
+                decodedPreviousValue = atob(previousEncodedValue);
+            }
+
+            setPendingValues(prev => ({ ...prev, [charUuid]: decodedPreviousValue }));
             triggerStatusAnimation(charUuid, 'error');
         }
     }

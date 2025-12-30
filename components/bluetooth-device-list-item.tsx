@@ -1,6 +1,7 @@
 import { getCharacteristicName, getDescriptorName, getServiceName, getUuidForCpfDescriptor, getUuidForCudDescriptor } from "@/constants/bluetooth";
 import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
 import { bleManager } from "@/hooks/use-ble";
+import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import { ActivityIndicator, Button, View } from "react-native";
 import { Subscription } from "react-native-ble-plx";
@@ -13,9 +14,10 @@ interface Props {
 
 export default function BluetoothDeviceListItem({ deviceName, macAddress }: Props) {
 
-    const { selectedDevice, setSelectedDevice, setIsScanning } = useBluetooth();
+    const { selectedDevice, setSelectedDevice } = useBluetooth();
     const [canPress, setCanPress] = useState<boolean>(true); // Prevent clicking the button while the long pairing process is active
     const disconnectSubscriptionRef = useRef<Subscription | null>(null);
+    const router = useRouter();
 
     function isSelected() {
         return selectedDevice?.mac === macAddress;
@@ -147,11 +149,11 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                                 }
                             });
 
-                            bleManager.stopDeviceScan();
-                            setIsScanning(false);
-
                             console.log(`Pairing complete`);
                             setCanPress(true);
+
+                            // Navigate to device state page
+                            router.navigate('/(tabs)/device-state');
                         }
                     }}
                 />
