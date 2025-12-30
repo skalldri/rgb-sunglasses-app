@@ -74,7 +74,7 @@ export default function DeviceStateScreen() {
     }, [initializedDeviceId, selectedDevice, selectedDevice?.mac]);
 
     // Helper to trigger write status animation
-    const triggerStatusAnimation = (charUuid: string, status: 'success' | 'error') => {
+    function triggerStatusAnimation(charUuid: string, status: 'success' | 'error') {
         // Initialize fade animation if not exists
         if (!fadeAnims.current[charUuid]) {
             fadeAnims.current[charUuid] = new Animated.Value(1);
@@ -95,18 +95,18 @@ export default function DeviceStateScreen() {
             // Clear status after animation completes
             setWriteStatus(prev => ({ ...prev, [charUuid]: null }));
         });
-    };
+    }
 
     // Helper to find which service contains a characteristic
-    const findServiceUuidForChar = (charUuid: string): string | undefined => {
+    function findServiceUuidForChar(charUuid: string): string | undefined {
         if (!selectedDevice) return undefined;
         return Object.keys(selectedDevice.characteristicsByService).find(
             svc => selectedDevice.characteristicsByService[svc][charUuid]
         );
-    };
+    }
 
     // Helper to update characteristic value in context (optimistic update)
-    const updateCharValue = (charUuid: string, newValue: string, charInfo: CharacteristicInfo) => {
+    function updateCharValue(charUuid: string, newValue: string, charInfo: CharacteristicInfo) {
         if (!selectedDevice) return;
         const serviceUuid = findServiceUuidForChar(charUuid);
         if (!serviceUuid) return;
@@ -126,10 +126,10 @@ export default function DeviceStateScreen() {
         };
         console.log(`CharacteristicInfo updated: ${JSON.stringify(updatedDevice.characteristicsByService[serviceUuid][charUuid])} `)
         setSelectedDevice(updatedDevice);
-    };
+    }
 
     // Helper to set isUpdateInProgress flag
-    const setCharUpdateInProgress = (charUuid: string, inProgress: boolean) => {
+    function setCharUpdateInProgress(charUuid: string, inProgress: boolean) {
         if (!selectedDevice) return;
         const serviceUuid = findServiceUuidForChar(charUuid);
         if (!serviceUuid) return;
@@ -148,10 +148,10 @@ export default function DeviceStateScreen() {
             }
         };
         setSelectedDevice(updatedDevice);
-    };
+    }
 
     // Helper to write characteristic value to BLE with full promise chain
-    const writeCharValue = (charUuid: string, charInfo: CharacteristicInfo, newEncodedValue: string, previousEncodedValue: string) => {
+    function writeCharValue(charUuid: string, charInfo: CharacteristicInfo, newEncodedValue: string, previousEncodedValue: string) {
         setCharUpdateInProgress(charUuid, true);
 
         charInfo.characteristic.writeWithResponse(newEncodedValue)
@@ -170,7 +170,7 @@ export default function DeviceStateScreen() {
             .finally(() => {
                 setCharUpdateInProgress(charUuid, false);
             });
-    };
+    }
 
     function renderCharacteristicInput(charUuid: string, charInfo: CharacteristicInfo) {
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_BOOLEAN) {
