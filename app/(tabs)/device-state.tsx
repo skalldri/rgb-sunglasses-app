@@ -227,15 +227,10 @@ export default function DeviceStateScreen() {
             if (charInfo.value) {
                 try {
                     const decoded = atob(charInfo.value);
-                    // Convert bytes to uint32 (little-endian), lower 24 bits are RGB
-                    const value = (decoded.charCodeAt(0) & 0xFF) |
-                        ((decoded.charCodeAt(1) & 0xFF) << 8) |
-                        ((decoded.charCodeAt(2) & 0xFF) << 16) |
-                        ((decoded.charCodeAt(3) & 0xFF) << 24);
-                    // Extract RGB from lower 24 bits
-                    r = value & 0xFF;
-                    g = (value >> 8) & 0xFF;
-                    b = (value >> 16) & 0xFF;
+                    // Bytes are in BGR order (little-endian 0x00RRGGBB)
+                    b = decoded.charCodeAt(0) & 0xFF;
+                    g = decoded.charCodeAt(1) & 0xFF;
+                    r = decoded.charCodeAt(2) & 0xFF;
                 } catch (e) {
                     console.log('Error decoding custom color value:', e);
                 }

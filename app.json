@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "rgb-sunglasses-app",
+    "name": "RGB Sunglasses",
     "slug": "rgb-sunglasses-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,13 +14,13 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/Gemini-Foreground-AppIcon.png",
+        "backgroundImage": "./assets/images/Gemini-Background-AppIcon.png",
+        "monochromeImage": "./assets/images/Gemini-Monochrome-AppIcon.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.rgbsunglassesapp"
+      "package": "com.autom8ed.rgbsunglassesapp"
     },
     "web": {
       "output": "static",

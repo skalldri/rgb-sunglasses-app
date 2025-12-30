@@ -210,14 +210,8 @@ export default function ColorPickerModal() {
                 style={styles.link}
                 onPress={async () => {
                     if (charUuid) {
-                        // Encode RGB as uint32 (little-endian): lower 24 bits are 0xBBGGRR
-                        const colorValue = rgb[0] | (rgb[1] << 8) | (rgb[2] << 16);
-                        const byte0 = colorValue & 0xFF;
-                        const byte1 = (colorValue >> 8) & 0xFF;
-                        const byte2 = (colorValue >> 16) & 0xFF;
-                        const byte3 = 0; // Upper byte is 0
-                        const encoded = btoa(String.fromCharCode(byte0, byte1, byte2, byte3));
-
+                        // Encode RGB as uint32 (little-endian): [B, G, R, 0] for 0x00RRGGBB format
+                        const encoded = btoa(String.fromCharCode(rgb[2], rgb[1], rgb[0], 0));
                         await writeToCharacteristic(charUuid, encoded);
                     }
                     router.back();
