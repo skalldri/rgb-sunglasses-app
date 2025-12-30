@@ -1,9 +1,10 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useBluetooth } from '@/context/bluetooth-context';
 import Slider from '@react-native-community/slider';
-import { Link, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { GestureResponderEvent, StyleSheet, View } from 'react-native';
+import { GestureResponderEvent, Pressable, StyleSheet, View } from 'react-native';
 
 // Convert RGB to HSV
 function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
@@ -59,6 +60,11 @@ const WHEEL_RADIUS = WHEEL_SIZE / 2;
 
 export default function ColorPickerModal() {
     const params = useLocalSearchParams();
+    const router = useRouter();
+    const { writeToCharacteristic } = useBluetooth();
+
+    // Get the characteristic UUID from params
+    const charUuid = params.charUuid as string;
 
     // Parse RGB values from query parameters
     const initialR = params.r ? parseInt(params.r as string, 10) : 255;
@@ -200,9 +206,25 @@ export default function ColorPickerModal() {
                 />
             </View>
 
-            <Link href="../" style={styles.link}>
+            <Pressable
+                style={styles.link}
+                onPress={async () => {
+                    if (charUuid) {
+                        // Encode RGB as uint32 (little-endian): lower 24 bits are 0xBBGGRR
+                        const colorValue = rgb[0] | (rgb[1] << 8) | (rgb[2] << 16);
+                        const byte0 = colorValue & 0xFF;
+                        const byte1 = (colorValue >> 8) & 0xFF;
+                        const byte2 = (colorValue >> 16) & 0xFF;
+                        const byte3 = 0; // Upper byte is 0
+                        const encoded = btoa(String.fromCharCode(byte0, byte1, byte2, byte3));
+
+                        await writeToCharacteristic(charUuid, encoded);
+                    }
+                    router.back();
+                }}
+            >
                 <ThemedText type="link">Done</ThemedText>
-            </Link>
+            </Pressable>
         </ThemedView>
     );
 }

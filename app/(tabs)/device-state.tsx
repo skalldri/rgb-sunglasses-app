@@ -14,7 +14,7 @@ const MCUMGR_CHARACTERISTIC_UUID = "da2e7828-fbce-4e01-ae9e-261174997c48";
 
 
 export default function DeviceStateScreen() {
-    const { selectedDevice, setSelectedDevice } = useBluetooth();
+    const { selectedDevice, writeToCharacteristic } = useBluetooth();
     const tabBarHeight = useBottomTabBarHeight();
 
     // Local state for tracking pending input values (before BLE write)
@@ -97,79 +97,18 @@ export default function DeviceStateScreen() {
         });
     }
 
-    // Helper to find which service contains a characteristic
-    function findServiceUuidForChar(charUuid: string): string | undefined {
-        if (!selectedDevice) return undefined;
-        return Object.keys(selectedDevice.characteristicsByService).find(
-            svc => selectedDevice.characteristicsByService[svc][charUuid]
-        );
-    }
+    // Helper to write characteristic value to BLE with UI feedback
+    async function writeCharValue(charUuid: string, newEncodedValue: string, previousEncodedValue: string) {
+        const success = await writeToCharacteristic(charUuid, newEncodedValue);
 
-    // Helper to update characteristic value in context (optimistic update)
-    function updateCharValue(charUuid: string, newValue: string, charInfo: CharacteristicInfo) {
-        if (!selectedDevice) return;
-        const serviceUuid = findServiceUuidForChar(charUuid);
-        if (!serviceUuid) return;
-
-        const updatedDevice = {
-            ...selectedDevice,
-            characteristicsByService: {
-                ...selectedDevice.characteristicsByService,
-                [serviceUuid]: {
-                    ...selectedDevice.characteristicsByService[serviceUuid],
-                    [charUuid]: {
-                        ...selectedDevice.characteristicsByService[serviceUuid][charUuid],
-                        value: newValue
-                    }
-                }
-            }
-        };
-        console.log(`CharacteristicInfo updated: ${JSON.stringify(updatedDevice.characteristicsByService[serviceUuid][charUuid])} `)
-        setSelectedDevice(updatedDevice);
-    }
-
-    // Helper to set isUpdateInProgress flag
-    function setCharUpdateInProgress(charUuid: string, inProgress: boolean) {
-        if (!selectedDevice) return;
-        const serviceUuid = findServiceUuidForChar(charUuid);
-        if (!serviceUuid) return;
-
-        const updatedDevice = {
-            ...selectedDevice,
-            characteristicsByService: {
-                ...selectedDevice.characteristicsByService,
-                [serviceUuid]: {
-                    ...selectedDevice.characteristicsByService[serviceUuid],
-                    [charUuid]: {
-                        ...selectedDevice.characteristicsByService[serviceUuid][charUuid],
-                        isUpdateInProgress: inProgress
-                    }
-                }
-            }
-        };
-        setSelectedDevice(updatedDevice);
-    }
-
-    // Helper to write characteristic value to BLE with full promise chain
-    function writeCharValue(charUuid: string, charInfo: CharacteristicInfo, newEncodedValue: string, previousEncodedValue: string) {
-        setCharUpdateInProgress(charUuid, true);
-
-        charInfo.characteristic.writeWithResponse(newEncodedValue)
-            .then(() => {
-                updateCharValue(charUuid, newEncodedValue, charInfo);
-                setPendingValues(prev => ({ ...prev, [charUuid]: atob(newEncodedValue) }));
-                triggerStatusAnimation(charUuid, 'success');
-            })
-            .catch((error) => {
-                console.log(`Error writing value to characteristic ${charUuid}: ${error} `);
-                // Revert value on error
-                updateCharValue(charUuid, previousEncodedValue, charInfo);
-                setPendingValues(prev => ({ ...prev, [charUuid]: atob(previousEncodedValue) }));
-                triggerStatusAnimation(charUuid, 'error');
-            })
-            .finally(() => {
-                setCharUpdateInProgress(charUuid, false);
-            });
+        if (success) {
+            setPendingValues(prev => ({ ...prev, [charUuid]: atob(newEncodedValue) }));
+            triggerStatusAnimation(charUuid, 'success');
+        } else {
+            // Revert pending value on error
+            setPendingValues(prev => ({ ...prev, [charUuid]: atob(previousEncodedValue) }));
+            triggerStatusAnimation(charUuid, 'error');
+        }
     }
 
     function renderCharacteristicInput(charUuid: string, charInfo: CharacteristicInfo) {
@@ -197,7 +136,7 @@ export default function DeviceStateScreen() {
                         const encoded = btoa(String.fromCharCode(boolByte));
 
                         // Write to BLE - writeCharValue will update on success and revert on failure
-                        writeCharValue(charUuid, charInfo, encoded, previousValue);
+                        writeCharValue(charUuid, encoded, previousValue);
                     }}
                 />
             );
@@ -229,7 +168,7 @@ export default function DeviceStateScreen() {
                     onSubmitEditing={() => {
                         const previousValue = charInfo.value ?? '';
                         const encoded = btoa(displayValue);
-                        writeCharValue(charUuid, charInfo, encoded, previousValue);
+                        writeCharValue(charUuid, encoded, previousValue);
                     }}
                 />
             );
@@ -273,7 +212,7 @@ export default function DeviceStateScreen() {
                             const byte3 = (numericValue >> 24) & 0xFF;
                             const encoded = btoa(String.fromCharCode(byte0, byte1, byte2, byte3));
 
-                            writeCharValue(charUuid, charInfo, encoded, previousValue);
+                            writeCharValue(charUuid, encoded, previousValue);
                         } else {
                             console.log(`Invalid number input: ${displayValue} `);
                         }
@@ -344,7 +283,7 @@ export default function DeviceStateScreen() {
                                 <View key={service.uuid + `- service - details - ` + String(index)}>
                                     <ThemedText
                                         key={service.uuid + `- ` + String(index)}>
-                                        {`Service ` + getServiceName(service.uuid) + `: `}
+                                        {getServiceName(service.uuid)}
                                     </ThemedText>
 
                                     {Object.entries(selectedDevice?.characteristicsByService[service.uuid] ?? {}).map(([charUuid, charInfo], charIndex) => {

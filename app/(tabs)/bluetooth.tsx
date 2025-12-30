@@ -64,10 +64,22 @@ export default function BluetoothScreen() {
 
         // Check if any devices are already paired with the OS with the "Core Config Service" UUID
         const connectedDevices = await bleManager.connectedDevices(["12345678-1234-5678-0001-56789abc0000"]);
-        console.log(`Connected Devices: ${connectedDevices}`)
 
         for (const device of connectedDevices) {
             console.log(`Already connected to device: ${device.name ?? 'Unnamed'} (${device.id})`);
+
+            if (device.localName?.includes("RGB Sunglasses") || device.name?.includes("RGB Sunglasses")) {
+                console.log(`Already connected to device: is an RGB Sunglasses!`);
+
+                setDevices((prevDevices) => {
+
+                    if (!isDuplicateDevice(prevDevices, device.id)) {
+                        return [...prevDevices, { name: device.localName ?? device.name ?? 'Unnamed', mac: device.id }];
+                    }
+
+                    return prevDevices;
+                });
+            }
         }
     }
 
