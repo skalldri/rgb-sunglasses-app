@@ -1,6 +1,6 @@
 import { McuMgrClient } from "@/services/mcumgr";
 import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from "react";
-import { Characteristic, Device, Service } from "react-native-ble-plx";
+import { Characteristic, Device, Service, Subscription } from "react-native-ble-plx";
 
 export interface CharacteristicInfo {
     characteristic: Characteristic;
@@ -26,6 +26,10 @@ type BluetoothContextType = {
     setIsScanning: (scanning: boolean) => void;
     writeToCharacteristic: (charUuid: string, newEncodedValue: string) => Promise<boolean>;
     getCharacteristicInfo: (charUuid: string) => CharacteristicInfo | null;
+    updateCharValue: (charUuid: string, newValue: string) => void;
+    // Monitor subscription management (persists across navigation)
+    monitorSubscriptions: React.MutableRefObject<Subscription[]>;
+    disconnectSubscription: React.MutableRefObject<Subscription | null>;
 };
 
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -38,6 +42,10 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
     // Use ref to access current device in callbacks without stale closures
     const selectedDeviceRef = useRef<BluetoothContextDevice | null>(null);
     selectedDeviceRef.current = selectedDevice;
+
+    // Store subscriptions at context level so they persist across navigation
+    const monitorSubscriptions = useRef<Subscription[]>([]);
+    const disconnectSubscription = useRef<Subscription | null>(null);
 
     // Helper to find which service contains a characteristic
     const findServiceUuidForChar = useCallback((charUuid: string): string | undefined => {
@@ -136,8 +144,11 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
         isScanning,
         setIsScanning,
         writeToCharacteristic,
-        getCharacteristicInfo
-    }), [selectedDevice, isScanning, writeToCharacteristic, getCharacteristicInfo]);
+        getCharacteristicInfo,
+        updateCharValue,
+        monitorSubscriptions,
+        disconnectSubscription,
+    }), [selectedDevice, isScanning, writeToCharacteristic, getCharacteristicInfo, updateCharValue]);
 
     return (
         <BluetoothContext.Provider value={contextValue}>

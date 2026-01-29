@@ -1,16 +1,12 @@
 import { ThemedText } from "@/components/themed-text";
 import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_CUSTOM_COLOR, BLE_GATT_CPF_FORMAT_UINT32, BLE_GATT_CPF_FORMAT_UTF8S, getCharacteristicName, getServiceName } from "@/constants/bluetooth";
 import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
+import { SMP_CHARACTERISTIC_UUID, SMP_SERVICE_UUID } from "@/services/mcumgr";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Link } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Button, KeyboardAvoidingView, Platform, ScrollView, Switch, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-// UUIDs for McuMgr service and characteristic
-const MCUMGR_SERVICE_UUID = "8d53dc1d-1db7-4cd3-868b-8a527460aa84";
-const MCUMGR_CHARACTERISTIC_UUID = "da2e7828-fbce-4e01-ae9e-261174997c48";
-
 
 
 export default function DeviceStateScreen() {
@@ -339,7 +335,7 @@ export default function DeviceStateScreen() {
                                     </ThemedText>
 
                                     {Object.entries(selectedDevice?.characteristicsByService[service.uuid] ?? {}).map(([charUuid, charInfo], charIndex) => {
-                                        const isMcuMgrCharacteristic = service.uuid === MCUMGR_SERVICE_UUID && charUuid === MCUMGR_CHARACTERISTIC_UUID;
+                                        const isMcuMgrCharacteristic = service.uuid === SMP_SERVICE_UUID && charUuid === SMP_CHARACTERISTIC_UUID;
 
                                         // Get animated color for this characteristic
                                         const status = writeStatus[charUuid];

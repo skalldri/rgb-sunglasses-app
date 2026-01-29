@@ -331,7 +331,7 @@ export class McuMgrClient {
 
         // Set up notifications for responses
         this.monitorSubscription = this.characteristic.monitor((error, char) => {
-            console.log('!!!MONITOR CALLED!!!');
+            console.log('SMP monitor called!');
 
             // Ignore all callbacks if client is destroyed
             if (this.isDestroyed) {

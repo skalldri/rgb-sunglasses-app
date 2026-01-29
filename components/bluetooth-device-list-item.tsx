@@ -1,10 +1,10 @@
-import { getCharacteristicName, getDescriptorName, getServiceName, getUuidForCpfDescriptor, getUuidForCudDescriptor } from "@/constants/bluetooth";
+import { getCharacteristicName, getDescriptorName, getServiceName, getUuidForCccDescriptor, getUuidForCpfDescriptor, getUuidForCudDescriptor } from "@/constants/bluetooth";
 import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
 import { bleManager } from "@/hooks/use-ble";
+import { SMP_CHARACTERISTIC_UUID, SMP_SERVICE_UUID } from "@/services/mcumgr";
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Button, View } from "react-native";
-import { Subscription } from "react-native-ble-plx";
 import { ThemedText } from "./themed-text";
 
 interface Props {
@@ -14,9 +14,8 @@ interface Props {
 
 export default function BluetoothDeviceListItem({ deviceName, macAddress }: Props) {
 
-    const { selectedDevice, setSelectedDevice } = useBluetooth();
+    const { selectedDevice, setSelectedDevice, updateCharValue, monitorSubscriptions, disconnectSubscription } = useBluetooth();
     const [canPress, setCanPress] = useState<boolean>(true); // Prevent clicking the button while the long pairing process is active
-    const disconnectSubscriptionRef = useRef<Subscription | null>(null);
     const router = useRouter();
 
     function isSelected() {
@@ -41,10 +40,15 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                             console.log(`Disconnecting from device: ${deviceName} (${macAddress})`);
 
                             // Clean up disconnection listener
-                            if (disconnectSubscriptionRef.current) {
-                                disconnectSubscriptionRef.current.remove();
-                                disconnectSubscriptionRef.current = null;
+                            if (disconnectSubscription.current) {
+                                disconnectSubscription.current.remove();
+                                disconnectSubscription.current = null;
                             }
+
+                            // Clean up all characteristic monitor subscriptions
+                            console.log(`Cleaning up ${monitorSubscriptions.current.length} characteristic monitors`);
+                            monitorSubscriptions.current.forEach(sub => sub.remove());
+                            monitorSubscriptions.current = [];
 
                             await bleManager.cancelDeviceConnection(macAddress);
                             setSelectedDevice(null);
@@ -93,6 +97,13 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                                                 const hex = Array.from(decoded, char => char.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
                                                 console.log(`CPF Descriptor Value (hex): ${hex}`);
                                             }
+
+                                            if (descriptor.uuid === getUuidForCccDescriptor()) {
+                                                const decoded = atob(readDescriptor.value || '');
+                                                // charInfo.cpfFormat = decoded.charCodeAt(0);
+                                                const hex = Array.from(decoded, char => char.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
+                                                console.log(`CCC Descriptor Value (hex): ${hex}`);
+                                            }
                                         }
 
                                         // Read the current characteristic value
@@ -120,8 +131,46 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                                 characteristicsByService: characteristicsByService,
                             });
 
+                            // Set up monitoring for notifiable characteristics
+                            console.log('Setting up characteristic monitors...');
+                            Object.entries(characteristicsByService).forEach(([serviceUuid, chars]) => {
+                                const serviceName = getServiceName(serviceUuid);
+                                Object.entries(chars).forEach(([charUuid, charInfo]) => {
+                                    const charName = charInfo.name || getCharacteristicName(charUuid);
+                                    // Check if characteristic is notifiable (skip McuMgr as it has its own monitoring)
+                                    if (charInfo.characteristic.isNotifiable &&
+                                        !(serviceUuid === SMP_SERVICE_UUID && charUuid === SMP_CHARACTERISTIC_UUID)) {
+                                        console.log(`Setting up monitor for notifiable characteristic: ${serviceName} > ${charName}`);
+
+                                        const subscription = charInfo.characteristic.monitor((error, characteristic) => {
+                                            console.log(`Monitor called for ${charName}`);
+
+                                            if (error) {
+                                                const errorStr = error?.message || String(error);
+                                                // Ignore cancellation errors (cleanup) and disconnection errors
+                                                if (errorStr.includes('cancelled') || errorStr.includes('Cancelled') ||
+                                                    errorStr.includes('Disconnect') || errorStr.includes('disconnect')) {
+                                                    console.log(`Monitor for ${charName}: ${errorStr.includes('cancel') ? 'cancelled' : 'disconnected'}`);
+                                                    return;
+                                                }
+                                                console.error(`Notification error for ${charName}:`, error);
+                                                return;
+                                            }
+
+                                            if (characteristic && characteristic.value) {
+                                                console.log(`📡 Notification received for ${charName}: ${characteristic.value}`);
+                                                updateCharValue(charUuid, characteristic.value);
+                                            }
+                                        });
+
+                                        monitorSubscriptions.current.push(subscription);
+                                    }
+                                });
+                            });
+                            console.log(`Set up ${monitorSubscriptions.current.length} characteristic monitors`);
+
                             // Set up disconnection listener after successful connection
-                            disconnectSubscriptionRef.current = bleManager.onDeviceDisconnected(macAddress, (error, device) => {
+                            disconnectSubscription.current = bleManager.onDeviceDisconnected(macAddress, (error, device) => {
                                 if (error) {
                                     console.log(`Device disconnection error for ${macAddress}:`, error);
                                 }
@@ -129,7 +178,12 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                                 if (device && device.id === macAddress) {
                                     console.log(`Device disconnected: ${deviceName} (${macAddress})`);
 
-                                    // Destroy MCUmgr client FIRST to prevent monitor crash
+                                    // Clean up all characteristic monitor subscriptions FIRST
+                                    console.log(`Cleaning up ${monitorSubscriptions.current.length} characteristic monitors on disconnect`);
+                                    monitorSubscriptions.current.forEach(sub => sub.remove());
+                                    monitorSubscriptions.current = [];
+
+                                    // Destroy MCUmgr client to prevent monitor crash
                                     if (selectedDevice?.mcuMgrClient) {
                                         try {
                                             selectedDevice.mcuMgrClient.destroy();
@@ -145,7 +199,7 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                                     setCanPress(true);
 
                                     // Clean up subscription reference
-                                    disconnectSubscriptionRef.current = null;
+                                    disconnectSubscription.current = null;
                                 }
                             });
 
