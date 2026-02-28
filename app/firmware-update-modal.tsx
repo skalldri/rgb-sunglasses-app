@@ -1,54 +1,19 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useBluetooth } from '@/context/bluetooth-context';
-import { formatBytes, formatHash, ImageSlot, McuMgrClient, parseImageHeader, SlotInfoResponse } from '@/services/mcumgr';
+import {
+    calculateOverallUploadProgress,
+    findUploadedImageForIndex,
+    FirmwarePackage,
+    parseFirmwareImageIndex,
+    parseFirmwarePackageFromBase64
+} from '@/services/firmware-package';
+import { formatBytes, formatHash, ImageSlot, McuMgrClient, SlotInfoResponse } from '@/services/mcumgr';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system/next';
 import { Link } from 'expo-router';
-import JSZip from 'jszip';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Button, ScrollView, StyleSheet, View } from 'react-native';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface ManifestFile {
-    type: string;
-    board: string;
-    soc: string;
-    load_address: number;
-    image_index: string;
-    slot_index_primary: string;
-    slot_index_secondary: string;
-    version_MCUBOOT?: string;
-    version?: string;
-    size: number;
-    file: string;
-    modtime: number;
-}
-
-interface FirmwareManifest {
-    'format-version': number;
-    time: number;
-    files: ManifestFile[];
-    name: string;
-}
-
-interface FirmwareImage {
-    manifest: ManifestFile;
-    data: Uint8Array;
-    parsedHeader: {
-        magic: number;
-        version: string;
-        imageSize: number;
-    } | null;
-}
-
-interface FirmwarePackage {
-    manifest: FirmwareManifest;
-    images: FirmwareImage[];
-}
 
 // ============================================================================
 // Component
@@ -185,47 +150,8 @@ export default function FirmwareUpdateModal() {
 
             // Parse zip file
             setStatus('Parsing firmware package...');
-            const zip = await JSZip.loadAsync(base64Data, { base64: true });
-
-            // Find and parse manifest.json
-            const manifestFile = zip.file('manifest.json');
-            if (!manifestFile) {
-                throw new Error('No manifest.json found in firmware package');
-            }
-
-            const manifestText = await manifestFile.async('text');
-            const manifest: FirmwareManifest = JSON.parse(manifestText);
-
-            if (!manifest.files || manifest.files.length === 0) {
-                throw new Error('No firmware files listed in manifest');
-            }
-
-            // Load each firmware image
-            const images: FirmwareImage[] = [];
-            for (const fileInfo of manifest.files) {
-                setStatus(`Loading ${fileInfo.file}...`);
-
-                const binFile = zip.file(fileInfo.file);
-                if (!binFile) {
-                    throw new Error(`Firmware file not found: ${fileInfo.file}`);
-                }
-
-                const binData = await binFile.async('uint8array');
-
-                // Parse the image header to get version info
-                const parsedHeader = parseImageHeader(binData);
-
-                images.push({
-                    manifest: fileInfo,
-                    data: binData,
-                    parsedHeader,
-                });
-            }
-
-            // Sort by image_index to ensure correct upload order
-            images.sort((a, b) => parseInt(a.manifest.image_index) - parseInt(b.manifest.image_index));
-
-            setFirmwarePackage({ manifest, images });
+            const parsedPackage = await parseFirmwarePackageFromBase64(base64Data);
+            setFirmwarePackage(parsedPackage);
             setStatus('');
         } catch (e: any) {
             setError(`Failed to load firmware package: ${e.message}`);
@@ -246,7 +172,7 @@ export default function FirmwareUpdateModal() {
 
             for (let i = 0; i < totalImages; i++) {
                 const image = firmwarePackage.images[i];
-                const imageIndex = parseInt(image.manifest.image_index);
+                const imageIndex = parseFirmwareImageIndex(image.manifest.image_index);
                 setCurrentUploadIndex(i);
 
                 setStatus(`Uploading ${image.manifest.file} (${i + 1}/${totalImages})...`);
@@ -255,10 +181,7 @@ export default function FirmwareUpdateModal() {
                     image.data,
                     imageIndex,
                     (sent, total) => {
-                        // Calculate overall progress across all images
-                        const imageProgress = sent / total;
-                        const overallProgress = ((i + imageProgress) / totalImages) * 100;
-                        setUploadProgress(Math.round(overallProgress));
+                        setUploadProgress(calculateOverallUploadProgress(i, totalImages, sent, total));
                     }
                 );
 
@@ -267,9 +190,7 @@ export default function FirmwareUpdateModal() {
                 // Get updated image state and mark for test
                 const state = await client.getImageState();
                 console.log(`Got image state after upload: ${JSON.stringify(state)}`)
-                const uploadedImage = state.images.find(
-                    img => img.slot === 1 && (img.image === imageIndex || (img.image === undefined && imageIndex === 0))
-                );
+                const uploadedImage = findUploadedImageForIndex(state.images, imageIndex);
 
                 if (uploadedImage?.hash) {
                     console.log(`Setting image state!`);
