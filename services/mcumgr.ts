@@ -124,7 +124,7 @@ export enum ImageError {
 }
 
 // SMP Header size (8 bytes)
-const SMP_HEADER_SIZE = 8;
+export const SMP_HEADER_SIZE = 8;
 
 // Default MTU for BLE (conservative)
 const DEFAULT_MTU = 400;
@@ -188,7 +188,7 @@ export type UploadProgressCallback = (bytesSent: number, totalBytes: number) => 
 /**
  * Creates an SMP header buffer
  */
-function createSmpHeader(
+export function createSmpHeader(
     op: SmpOp,
     group: SmpGroup,
     command: number,
@@ -223,7 +223,11 @@ function createSmpHeader(
 /**
  * Parses an SMP header from a buffer
  */
-function parseSmpHeader(data: Uint8Array): SmpHeader {
+export function parseSmpHeader(data: Uint8Array): SmpHeader {
+    if (data.byteLength < SMP_HEADER_SIZE) {
+        throw new Error(`SMP header too short: ${data.byteLength} bytes`);
+    }
+
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
 
     return {
@@ -240,7 +244,7 @@ function parseSmpHeader(data: Uint8Array): SmpHeader {
 /**
  * Encodes data to CBOR format
  */
-function encodeCbor(data: any): Uint8Array {
+export function encodeCbor(data: any): Uint8Array {
     const arrayBuffer = CBOR.encode(data);
     return new Uint8Array(arrayBuffer);
 }
@@ -248,14 +252,14 @@ function encodeCbor(data: any): Uint8Array {
 /**
  * Decodes CBOR data
  */
-function decodeCbor(data: Uint8Array): any {
+export function decodeCbor(data: Uint8Array): any {
     return CBOR.decode(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
 }
 
 /**
  * Converts a base64 string to Uint8Array
  */
-function base64ToUint8Array(base64: string): Uint8Array {
+export function base64ToUint8Array(base64: string): Uint8Array {
     const binaryString = atob(base64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
@@ -267,7 +271,7 @@ function base64ToUint8Array(base64: string): Uint8Array {
 /**
  * Converts a Uint8Array to base64 string
  */
-function uint8ArrayToBase64(bytes: Uint8Array): string {
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
         binary += String.fromCharCode(bytes[i]);
@@ -278,7 +282,7 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 /**
  * Converts a Uint8Array to hex string
  */
-function uint8ArrayToHex(bytes: Uint8Array): string {
+export function uint8ArrayToHex(bytes: Uint8Array): string {
     return Array.from(bytes)
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
@@ -404,18 +408,22 @@ export class McuMgrClient {
     private handleResponse(data: Uint8Array): void {
         //console.log(`handleResponse called with ${data.length} bytes`);
 
-        if (this.responseBuffer.length === 0) {
-            // First fragment - parse header to get expected length
-            const header = parseSmpHeader(data);
-            this.expectedLength = SMP_HEADER_SIZE + header.length;
-            //console.log(`First fragment, expecting total ${this.expectedLength} bytes`);
-        }
-
-        // Append data to buffer
+        // Append data to buffer first. This allows the first fragment to be smaller than SMP_HEADER_SIZE.
         const newBuffer = new Uint8Array(this.responseBuffer.length + data.length);
         newBuffer.set(this.responseBuffer);
         newBuffer.set(data, this.responseBuffer.length);
         this.responseBuffer = newBuffer;
+
+        // Parse header once enough bytes are available.
+        if (this.expectedLength === 0) {
+            if (this.responseBuffer.length < SMP_HEADER_SIZE) {
+                return;
+            }
+
+            const header = parseSmpHeader(this.responseBuffer);
+            this.expectedLength = SMP_HEADER_SIZE + header.length;
+            //console.log(`First fragment, expecting total ${this.expectedLength} bytes`);
+        }
 
         //console.log(`Buffer now has ${this.responseBuffer.length}/${this.expectedLength} bytes`);
 
@@ -487,7 +495,7 @@ export class McuMgrClient {
         });
 
         // Fragment and send if necessary
-        const maxPayloadSize = this.mtu - 3; // Conservative estimate
+        const maxPayloadSize = Math.max(1, this.mtu - 3); // Conservative estimate with floor guard
         //console.log(`Sending packet of ${packet.length} bytes, maxPayloadSize=${maxPayloadSize}`);
         for (let offset = 0; offset < packet.length; offset += maxPayloadSize) {
             const chunk = packet.slice(offset, Math.min(offset + maxPayloadSize, packet.length));
@@ -611,13 +619,14 @@ export class McuMgrClient {
     ): Promise<void> {
         const totalLength = imageData.length;
         let offset = 0;
+        let stalledOffsetCount = 0;
 
         // Calculate SHA256 hash of the image
         const sha256Hash = this.calculateSha256(imageData);
 
         while (offset < totalLength) {
             // Calculate chunk size (leave room for CBOR overhead)
-            const maxChunkSize = this.mtu - 64; // Conservative chunk size
+            const maxChunkSize = Math.max(1, this.mtu - 64); // Conservative chunk size with floor guard
             const chunkSize = Math.min(maxChunkSize, totalLength - offset);
             const chunk = imageData.slice(offset, offset + chunkSize);
 
@@ -665,12 +674,22 @@ export class McuMgrClient {
             }
 
             // Server may respond with a different offset (e.g., to continue broken upload)
-            if (response.off !== undefined) {
-                // console.log(`Server asked for a new offset! ${response.off}`);
-                offset = response.off;
-            } else {
-                offset += chunkSize;
+            const nextOffset = response.off !== undefined ? response.off : offset + chunkSize;
+            if (nextOffset < 0 || nextOffset > totalLength) {
+                throw new Error(`Image upload error: invalid offset ${nextOffset} (total=${totalLength})`);
             }
+
+            if (nextOffset <= offset) {
+                stalledOffsetCount += 1;
+                if (stalledOffsetCount >= 3) {
+                    throw new Error(`Image upload stalled at offset ${offset}`);
+                }
+            } else {
+                stalledOffsetCount = 0;
+            }
+
+            // console.log(`Server asked for a new offset! ${nextOffset}`);
+            offset = nextOffset;
 
             if (onProgress) {
                 onProgress(offset, totalLength);
