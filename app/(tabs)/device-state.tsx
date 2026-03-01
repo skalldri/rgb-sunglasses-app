@@ -1,8 +1,8 @@
 import { ThemedText } from "@/components/themed-text";
 import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_CUSTOM_COLOR, BLE_GATT_CPF_FORMAT_UINT32, BLE_GATT_CPF_FORMAT_UTF8S, getCharacteristicName, getServiceName } from "@/constants/bluetooth";
 import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
+import { decodeBooleanFromBase64, decodeColorFromBase64, decodeUint32FromBase64, decodeUtf8FromBase64, encodeBooleanToBase64, encodeUint32ToBase64, encodeUtf8ToBase64, sanitizeNumericInput } from "@/services/ble-value-codec";
 import { SMP_CHARACTERISTIC_UUID, SMP_SERVICE_UUID } from "@/services/mcumgr";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Link } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Button, KeyboardAvoidingView, Platform, ScrollView, Switch, TextInput, View } from "react-native";
@@ -11,7 +11,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function DeviceStateScreen() {
     const { selectedDevice, writeToCharacteristic } = useBluetooth();
-    const tabBarHeight = useBottomTabBarHeight();
 
     // Local state for tracking pending input values (before BLE write)
     const [pendingValues, setPendingValues] = useState<Record<string, string>>({});
@@ -46,18 +45,13 @@ export default function DeviceStateScreen() {
                 // Only initialize for text/numeric inputs (not boolean or color)
                 if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S && charInfo.value) {
                     try {
-                        initialValues[charUuid] = atob(charInfo.value);
+                        initialValues[charUuid] = decodeUtf8FromBase64(charInfo.value);
                     } catch (e) {
                         console.log(`Error decoding UTF8 value for ${charUuid}:`, e);
                     }
                 } else if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32 && charInfo.value) {
                     try {
-                        const decoded = atob(charInfo.value);
-                        const value = (decoded.charCodeAt(0) & 0xFF) |
-                            ((decoded.charCodeAt(1) & 0xFF) << 8) |
-                            ((decoded.charCodeAt(2) & 0xFF) << 16) |
-                            ((decoded.charCodeAt(3) & 0xFF) << 24);
-                        initialValues[charUuid] = String(value);
+                        initialValues[charUuid] = String(decodeUint32FromBase64(charInfo.value));
                     } catch (e) {
                         console.log(`Error decoding UINT32 value for ${charUuid}:`, e);
                     }
@@ -93,6 +87,21 @@ export default function DeviceStateScreen() {
         });
     }
 
+    function decodeValueForInput(cpfFormat: number | null, encodedValue: string, charUuid: string): string {
+        try {
+            if (cpfFormat === BLE_GATT_CPF_FORMAT_UINT32) {
+                return String(decodeUint32FromBase64(encodedValue));
+            }
+            if (cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
+                return decodeUtf8FromBase64(encodedValue);
+            }
+            return decodeUtf8FromBase64(encodedValue);
+        } catch (error) {
+            console.log(`Error decoding value for ${charUuid}:`, error);
+            return '';
+        }
+    }
+
     // Helper to write characteristic value to BLE with UI feedback
     async function writeCharValue(charUuid: string, newEncodedValue: string, previousEncodedValue: string) {
         const success = await writeToCharacteristic(charUuid, newEncodedValue);
@@ -105,59 +114,12 @@ export default function DeviceStateScreen() {
             : null;
 
         if (success) {
-            // Decode the value appropriately based on the characteristic type
-            let decodedValue = '';
-            if (charInfo?.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32) {
-                try {
-                    const decoded = atob(newEncodedValue);
-                    const value = (decoded.charCodeAt(0) & 0xFF) |
-                        ((decoded.charCodeAt(1) & 0xFF) << 8) |
-                        ((decoded.charCodeAt(2) & 0xFF) << 16) |
-                        ((decoded.charCodeAt(3) & 0xFF) << 24);
-                    decodedValue = String(value);
-                } catch (e) {
-                    console.log(`Error decoding UINT32 value for ${charUuid}:`, e);
-                    decodedValue = atob(newEncodedValue);
-                }
-            } else if (charInfo?.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
-                try {
-                    decodedValue = atob(newEncodedValue);
-                } catch (e) {
-                    console.log(`Error decoding UTF8 value for ${charUuid}:`, e);
-                    decodedValue = atob(newEncodedValue);
-                }
-            } else {
-                // Fallback for other types (like boolean, which don't use pending values)
-                decodedValue = atob(newEncodedValue);
-            }
+            const decodedValue = decodeValueForInput(charInfo?.cpfFormat ?? null, newEncodedValue, charUuid);
 
             setPendingValues(prev => ({ ...prev, [charUuid]: decodedValue }));
             triggerStatusAnimation(charUuid, 'success');
         } else {
-            // Revert pending value on error - decode the previous value appropriately
-            let decodedPreviousValue = '';
-            if (charInfo?.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32) {
-                try {
-                    const decoded = atob(previousEncodedValue);
-                    const value = (decoded.charCodeAt(0) & 0xFF) |
-                        ((decoded.charCodeAt(1) & 0xFF) << 8) |
-                        ((decoded.charCodeAt(2) & 0xFF) << 16) |
-                        ((decoded.charCodeAt(3) & 0xFF) << 24);
-                    decodedPreviousValue = String(value);
-                } catch (e) {
-                    console.log(`Error decoding previous UINT32 value for ${charUuid}:`, e);
-                    decodedPreviousValue = atob(previousEncodedValue);
-                }
-            } else if (charInfo?.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
-                try {
-                    decodedPreviousValue = atob(previousEncodedValue);
-                } catch (e) {
-                    console.log(`Error decoding previous UTF8 value for ${charUuid}:`, e);
-                    decodedPreviousValue = atob(previousEncodedValue);
-                }
-            } else {
-                decodedPreviousValue = atob(previousEncodedValue);
-            }
+            const decodedPreviousValue = decodeValueForInput(charInfo?.cpfFormat ?? null, previousEncodedValue, charUuid);
 
             setPendingValues(prev => ({ ...prev, [charUuid]: decodedPreviousValue }));
             triggerStatusAnimation(charUuid, 'error');
@@ -170,8 +132,7 @@ export default function DeviceStateScreen() {
             let displayValue = false;
             if (charInfo.value) {
                 try {
-                    const decoded = atob(charInfo.value);
-                    displayValue = decoded.charCodeAt(0) !== 0;
+                    displayValue = decodeBooleanFromBase64(charInfo.value);
                 } catch (e) {
                     console.log('Error decoding boolean value:', e);
                 }
@@ -185,8 +146,7 @@ export default function DeviceStateScreen() {
                         console.log(`Toggle changed to: ${value} `);
 
                         const previousValue = charInfo.value ?? '';
-                        const boolByte = value ? 1 : 0;
-                        const encoded = btoa(String.fromCharCode(boolByte));
+                        const encoded = encodeBooleanToBase64(value);
 
                         // Write to BLE - writeCharValue will update on success and revert on failure
                         writeCharValue(charUuid, encoded, previousValue);
@@ -220,7 +180,7 @@ export default function DeviceStateScreen() {
                     }}
                     onSubmitEditing={() => {
                         const previousValue = charInfo.value ?? '';
-                        const encoded = btoa(displayValue);
+                        const encoded = encodeUtf8ToBase64(displayValue);
                         writeCharValue(charUuid, encoded, previousValue);
                     }}
                 />
@@ -249,7 +209,7 @@ export default function DeviceStateScreen() {
                     value={displayValue}
                     onChangeText={(text) => {
                         // Only allow numeric input
-                        const numericText = text.replace(/[^0-9]/g, '');
+                        const numericText = sanitizeNumericInput(text);
                         // Update local state only - don't update BLE value yet
                         setPendingValues(prev => ({ ...prev, [charUuid]: numericText }));
                     }}
@@ -258,12 +218,7 @@ export default function DeviceStateScreen() {
                         const numericValue = parseInt(displayValue, 10);
 
                         if (!isNaN(numericValue)) {
-                            // Convert uint32 to 4 bytes (little-endian)
-                            const byte0 = numericValue & 0xFF;
-                            const byte1 = (numericValue >> 8) & 0xFF;
-                            const byte2 = (numericValue >> 16) & 0xFF;
-                            const byte3 = (numericValue >> 24) & 0xFF;
-                            const encoded = btoa(String.fromCharCode(byte0, byte1, byte2, byte3));
+                            const encoded = encodeUint32ToBase64(numericValue);
 
                             writeCharValue(charUuid, encoded, previousValue);
                         } else {
@@ -277,16 +232,13 @@ export default function DeviceStateScreen() {
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_CUSTOM_COLOR) {
             // Decode the UINT32 RGB value from the characteristic if available
             let r = 0, g = 0, b = 0;
-            if (charInfo.value) {
-                try {
-                    const decoded = atob(charInfo.value);
-                    // Bytes are in BGR order (little-endian 0x00RRGGBB)
-                    b = decoded.charCodeAt(0) & 0xFF;
-                    g = decoded.charCodeAt(1) & 0xFF;
-                    r = decoded.charCodeAt(2) & 0xFF;
-                } catch (e) {
-                    console.log('Error decoding custom color value:', e);
-                }
+            try {
+                const color = decodeColorFromBase64(charInfo.value);
+                r = color.r;
+                g = color.g;
+                b = color.b;
+            } catch (e) {
+                console.log('Error decoding custom color value:', e);
             }
 
             return (
