@@ -22,15 +22,18 @@ jest.mock('@react-navigation/bottom-tabs', () => ({
 function buildSelectedDevice(characters: Array<{ uuid: string; cpfFormat: number; value: string; name?: string }>) {
   const serviceUuid = 'service-1';
   const byService: Record<string, any> = { [serviceUuid]: {} };
+  const flat: Record<string, any> = {};
 
   for (const char of characters) {
-    byService[serviceUuid][char.uuid] = {
+    const info = {
       characteristic: {},
       value: char.value,
       name: char.name ?? char.uuid,
       cpfFormat: char.cpfFormat,
       isUpdateInProgress: false,
     };
+    byService[serviceUuid][char.uuid] = info;
+    flat[char.uuid] = info;
   }
 
   return {
@@ -39,6 +42,8 @@ function buildSelectedDevice(characters: Array<{ uuid: string; cpfFormat: number
     device: {},
     services: [{ uuid: serviceUuid }],
     characteristicsByService: byService,
+    characteristics: flat,
+    serviceCharacteristics: { [serviceUuid]: characters.map(c => c.uuid) },
   };
 }
 

@@ -14,10 +14,13 @@ export default function DeviceStateScreen() {
 
     // Local state for tracking pending input values (before BLE write)
     const [pendingValues, setPendingValues] = useState<Record<string, string>>({});
+    // Ref mirror so notification effect can read pendingValues without it being a dep
+    const pendingValuesRef = useRef<Record<string, string>>({});
+    pendingValuesRef.current = pendingValues;
     // Track which device we've initialized for to avoid re-initializing on every update
     const [initializedDeviceId, setInitializedDeviceId] = useState<string | null>(null);
-    // Track write status for each characteristic (success/error/null)
-    const [writeStatus, setWriteStatus] = useState<Record<string, 'success' | 'error' | null>>({});
+    // Track write status for each characteristic (success/error/notification/null)
+    const [writeStatus, setWriteStatus] = useState<Record<string, 'success' | 'error' | 'notification' | null>>({});
     // Track animation values for color fade
     const fadeAnims = useRef<Record<string, Animated.Value>>({});
 
@@ -63,8 +66,36 @@ export default function DeviceStateScreen() {
         setInitializedDeviceId(selectedDevice.mac);
     }, [initializedDeviceId, selectedDevice, selectedDevice?.mac]);
 
+    // Sync pendingValues when characteristic values are updated by BLE notifications.
+    // The initialization effect above skips re-runs (by design) to avoid resetting user edits,
+    // so this separate effect handles incoming notification updates.
+    useEffect(() => {
+        if (!selectedDevice) return;
+
+        const prev = pendingValuesRef.current;
+        const updates: Record<string, string> = {};
+
+        Object.entries(selectedDevice.characteristics).forEach(([charUuid, charInfo]) => {
+            if (!charInfo.value) return;
+            try {
+                if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
+                    const decoded = decodeUtf8FromBase64(charInfo.value);
+                    if (prev[charUuid] !== decoded) updates[charUuid] = decoded;
+                } else if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32) {
+                    const decoded = String(decodeUint32FromBase64(charInfo.value));
+                    if (prev[charUuid] !== decoded) updates[charUuid] = decoded;
+                }
+            } catch (e) { /* ignore decode errors */ }
+        });
+
+        if (Object.keys(updates).length > 0) {
+            setPendingValues(prev => ({ ...prev, ...updates }));
+            Object.keys(updates).forEach(charUuid => triggerStatusAnimation(charUuid, 'notification'));
+        }
+    }, [selectedDevice?.characteristics]); // fires only when a characteristic value reference changes
+
     // Helper to trigger write status animation
-    function triggerStatusAnimation(charUuid: string, status: 'success' | 'error') {
+    function triggerStatusAnimation(charUuid: string, status: 'success' | 'error' | 'notification') {
         // Initialize fade animation if not exists
         if (!fadeAnims.current[charUuid]) {
             fadeAnims.current[charUuid] = new Animated.Value(1);
@@ -264,10 +295,13 @@ export default function DeviceStateScreen() {
                                         const fadeValue = fadeAnims.current[charUuid];
 
                                         // Interpolate color based on status and fade value
+                                        const statusColor = status === 'success' ? '#00ff00'
+                                            : status === 'notification' ? '#4499ff'
+                                            : '#ff0000';
                                         const textColor = status && fadeValue
                                             ? fadeValue.interpolate({
                                                 inputRange: [0, 1],
-                                                outputRange: ['#ffffff', status === 'success' ? '#00ff00' : '#ff0000']
+                                                outputRange: ['#ffffff', statusColor]
                                             })
                                             : '#ffffff';
 
