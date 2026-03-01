@@ -225,5 +225,5 @@ These are low-risk extractions that make unit tests easier and faster:
 - [x] `mcumgr` unit suite committed
 - [x] firmware modal unit/component suite committed
 - [x] BLE context/device-state unit suite committed
-- [ ] Bluetooth flow component suite committed
+- [x] Bluetooth flow component suite committed
 - [ ] coverage thresholds enforced in CI
