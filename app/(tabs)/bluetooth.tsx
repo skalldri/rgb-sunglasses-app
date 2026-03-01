@@ -10,6 +10,9 @@ import { bleManager, requestPermissions } from "@/hooks/use-ble";
 import { useFocusEffect } from "expo-router";
 import { LogLevel } from "react-native-ble-plx";
 
+// Set log level once at module load
+bleManager.setLogLevel(LogLevel.Verbose);
+
 type BleDevice = {
     name: string;
     mac: string;
@@ -32,9 +35,13 @@ export default function BluetoothScreen() {
         console.log('Starting Bluetooth scan...');
         setIsScanning(true);
         setDevices([]);
-        await requestPermissions();
-
-        bleManager.setLogLevel(LogLevel.Verbose);
+        
+        const permissionsGranted = await requestPermissions();
+        if (!permissionsGranted) {
+            console.log('Bluetooth permissions denied');
+            setIsScanning(false);
+            return;
+        }
 
         await bleManager.startDeviceScan(null, null, (error, device) => {
             if (error) {

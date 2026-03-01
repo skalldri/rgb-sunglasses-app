@@ -49,6 +49,12 @@ function buildSelectedDevice(writeWithResponse: jest.Mock, value: string = btoa(
         'char-1': charInfo,
       },
     },
+    characteristics: {
+      'char-1': charInfo,
+    },
+    serviceCharacteristics: {
+      'service-1': ['char-1'],
+    },
   };
 }
 

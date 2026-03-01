@@ -22,7 +22,6 @@
     "@react-navigation/native": "^7.1.8",
     "@types/jszip": "^3.4.0",
     "cbor-js": "^0.1.0",
-    "claude": "^0.1.1",
     "expo": "~54.0.23",
     "expo-constants": "~18.0.10",
     "expo-crypto": "^15.0.8",

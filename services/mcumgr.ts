@@ -536,29 +536,10 @@ export class McuMgrClient {
             {}
         );
 
-        if (response.rc && response.rc !== 0) {
-            throw new Error(`Image state error: ${response.rc}`);
-        }
-
-        if (response.err) {
-            throw new Error(`Image state error: group=${response.err.group}, rc=${response.err.rc}`);
-        }
-
-        // Parse image slots
-        const images: ImageSlot[] = (response.images || []).map((img: any) => ({
-            image: img.image,
-            slot: img.slot,
-            version: img.version,
-            hash: img.hash ? new Uint8Array(img.hash) : undefined,
-            bootable: img.bootable,
-            pending: img.pending,
-            confirmed: img.confirmed,
-            active: img.active,
-            permanent: img.permanent,
-        }));
+        throwOnSmpError(response, 'Image state error');
 
         return {
-            images,
+            images: parseImageSlots(response.images),
             splitStatus: response.splitStatus,
         };
     }
@@ -582,27 +563,9 @@ export class McuMgrClient {
             payload
         );
 
-        if (response.rc && response.rc !== 0) {
-            throw new Error(`Set image state error: ${response.rc}`);
-        }
+        throwOnSmpError(response, 'Set image state error');
 
-        if (response.err) {
-            throw new Error(`Set image state error: group=${response.err.group}, rc=${response.err.rc}`);
-        }
-
-        const images: ImageSlot[] = (response.images || []).map((img: any) => ({
-            image: img.image,
-            slot: img.slot,
-            version: img.version,
-            hash: img.hash ? new Uint8Array(img.hash) : undefined,
-            bootable: img.bootable,
-            pending: img.pending,
-            confirmed: img.confirmed,
-            active: img.active,
-            permanent: img.permanent,
-        }));
-
-        return { images };
+        return { images: parseImageSlots(response.images) };
     }
 
     /**
@@ -665,13 +628,7 @@ export class McuMgrClient {
             );
             //console.log(`Send complete`);
 
-            if (response.rc && response.rc !== 0) {
-                throw new Error(`Image upload error at offset ${offset}: rc=${response.rc}`);
-            }
-
-            if (response.err) {
-                throw new Error(`Image upload error: group=${response.err.group}, rc=${response.err.rc}`);
-            }
+            throwOnSmpError(response, `Image upload error at offset ${offset}`);
 
             // Server may respond with a different offset (e.g., to continue broken upload)
             const nextOffset = response.off !== undefined ? response.off : offset + chunkSize;
@@ -722,13 +679,7 @@ export class McuMgrClient {
             120000 // Very long timeout - erase can take a while
         );
 
-        if (response.rc && response.rc !== 0) {
-            throw new Error(`Image erase error: ${response.rc}`);
-        }
-
-        if (response.err) {
-            throw new Error(`Image erase error: group=${response.err.group}, rc=${response.err.rc}`);
-        }
+        throwOnSmpError(response, 'Image erase error');
     }
 
     /**
@@ -742,13 +693,7 @@ export class McuMgrClient {
             {}
         );
 
-        if (response.rc && response.rc !== 0) {
-            throw new Error(`Slot info error: ${response.rc}`);
-        }
-
-        if (response.err) {
-            throw new Error(`Slot info error: group=${response.err.group}, rc=${response.err.rc}`);
-        }
+        throwOnSmpError(response, 'Slot info error');
 
         return response;
     }
@@ -890,6 +835,35 @@ export class McuMgrClient {
 // ============================================================================
 // Utility Functions
 // ============================================================================
+
+/**
+ * Check SMP response for errors and throw if present
+ */
+function throwOnSmpError(response: any, label: string): void {
+    if (response.rc && response.rc !== 0) {
+        throw new Error(`${label}: rc=${response.rc}`);
+    }
+    if (response.err) {
+        throw new Error(`${label}: group=${response.err.group}, rc=${response.err.rc}`);
+    }
+}
+
+/**
+ * Parse image slots from SMP response
+ */
+function parseImageSlots(images: any[]): ImageSlot[] {
+    return (images || []).map((img: any) => ({
+        image: img.image,
+        slot: img.slot,
+        version: img.version,
+        hash: img.hash ? new Uint8Array(img.hash) : undefined,
+        bootable: img.bootable,
+        pending: img.pending,
+        confirmed: img.confirmed,
+        active: img.active,
+        permanent: img.permanent,
+    }));
+}
 
 /**
  * Parse a firmware image header to extract version info

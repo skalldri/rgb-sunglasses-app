@@ -4,7 +4,7 @@ import { bleManager } from "@/hooks/use-ble";
 import { SMP_CHARACTERISTIC_UUID, SMP_SERVICE_UUID } from "@/services/mcumgr";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Button, View } from "react-native";
+import { ActivityIndicator, Button, StyleSheet, View } from "react-native";
 import { ThemedText } from "./themed-text";
 
 interface Props {
@@ -23,14 +23,14 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
     }
 
     return (
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <ThemedText style={{ flex: 1 }}>
+        <View style={styles.container}>
+            <ThemedText style={styles.deviceName}>
                 {deviceName}
             </ThemedText>
-            <ThemedText style={{ flex: 1, fontSize: 12, opacity: 0.6 }}>
+            <ThemedText style={styles.macAddress}>
                 {macAddress}
             </ThemedText>
-            <View style={{ position: 'relative' }}>
+            <View style={styles.buttonContainer}>
                 <Button
                     title={isSelected() ? "Disconnect" : "Connect"}
                     disabled={!canPress}
@@ -64,12 +64,16 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
 
                             // Build mapping of service UUID -> characteristics (by UUID)
                             const characteristicsByService: Record<string, Record<string, CharacteristicInfo>> = {};
+                            const characteristics: Record<string, CharacteristicInfo> = {};
+                            const serviceCharacteristics: Record<string, string[]> = {};
+                            
                             if (services) {
                                 for (const service of services) {
-                                    const characteristics = await deviceConnection.characteristicsForService(service.uuid);
+                                    const serviceChars = await deviceConnection.characteristicsForService(service.uuid);
                                     const characteristicInfos: Record<string, CharacteristicInfo> = {};
+                                    const charUuids: string[] = [];
 
-                                    for (const characteristic of characteristics) {
+                                    for (const characteristic of serviceChars) {
                                         const descriptors = await service.descriptorsForCharacteristic(characteristic.uuid);
                                         console.log(`Characteristic: ${getCharacteristicName(characteristic.uuid)}, Descriptors: ${descriptors.length}`);
 
@@ -116,9 +120,12 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                                         }
 
                                         characteristicInfos[characteristic.uuid] = charInfo;
+                                        characteristics[characteristic.uuid] = charInfo;
+                                        charUuids.push(characteristic.uuid);
                                     }
 
                                     characteristicsByService[service.uuid] = characteristicInfos;
+                                    serviceCharacteristics[service.uuid] = charUuids;
                                     console.log(`Service UUID: ${getServiceName(service.uuid)}, Characteristics: ${Object.keys(characteristicInfos).length}`);
                                 }
                             }
@@ -129,6 +136,8 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                                 device: deviceConnection,
                                 services: services,
                                 characteristicsByService: characteristicsByService,
+                                characteristics: characteristics,
+                                serviceCharacteristics: serviceCharacteristics,
                             });
 
                             // Set up monitoring for notifiable characteristics
@@ -212,15 +221,7 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
                     }}
                 />
                 {!canPress && (
-                    <View style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                    }}>
+                    <View style={styles.loadingOverlay}>
                         <ActivityIndicator size="small" color="#fff" />
                     </View>
                 )}
@@ -228,3 +229,31 @@ export default function BluetoothDeviceListItem({ deviceName, macAddress }: Prop
         </View>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    deviceName: {
+        flex: 1,
+    },
+    macAddress: {
+        flex: 1,
+        fontSize: 12,
+        opacity: 0.6,
+    },
+    buttonContainer: {
+        position: 'relative',
+    },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+});

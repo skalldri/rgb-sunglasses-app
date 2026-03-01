@@ -16,6 +16,10 @@ export type BluetoothContextDevice = {
     device: Device;
     services: Service[];
     characteristicsByService: Record<string, Record<string, CharacteristicInfo>>;
+    // Flat map for efficient characteristic lookups
+    characteristics: Record<string, CharacteristicInfo>;
+    // Map of service UUID to array of characteristic UUIDs for rendering order
+    serviceCharacteristics: Record<string, string[]>;
     mcuMgrClient?: McuMgrClient;
 };
 
@@ -51,31 +55,47 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
     const findServiceUuidForChar = useCallback((charUuid: string): string | undefined => {
         const device = selectedDeviceRef.current;
         if (!device) return undefined;
-        return Object.keys(device.characteristicsByService).find(
-            svc => device.characteristicsByService[svc][charUuid]
-        );
+        // Use flat map for O(1) lookup
+        if (device.characteristics[charUuid]) {
+            return device.serviceCharacteristics && Object.keys(device.serviceCharacteristics).find(
+                svcUuid => device.serviceCharacteristics[svcUuid].includes(charUuid)
+            );
+        }
+        return undefined;
     }, []);
 
     // Helper to get characteristic info by UUID
     const getCharacteristicInfo = useCallback((charUuid: string): CharacteristicInfo | null => {
         const device = selectedDeviceRef.current;
         if (!device) return null;
-        const serviceUuid = findServiceUuidForChar(charUuid);
-        if (!serviceUuid) return null;
-        return device.characteristicsByService[serviceUuid][charUuid] ?? null;
-    }, [findServiceUuidForChar]);
+        // Use flat map for O(1) lookup
+        return device.characteristics?.[charUuid] ?? null;
+    }, []);
 
     // Helper to update characteristic value in context
     const updateCharValue = useCallback((charUuid: string, newValue: string) => {
         setSelectedDevice(prevDevice => {
             if (!prevDevice) return null;
-            const serviceUuid = Object.keys(prevDevice.characteristicsByService).find(
-                svc => prevDevice.characteristicsByService[svc][charUuid]
+            
+            // Update flat map
+            const updatedChar = prevDevice.characteristics[charUuid];
+            if (!updatedChar) return prevDevice;
+
+            // Also update nested structure for backwards compatibility
+            const serviceUuid = Object.keys(prevDevice.serviceCharacteristics || {}).find(
+                svc => prevDevice.serviceCharacteristics[svc].includes(charUuid)
             );
             if (!serviceUuid) return prevDevice;
 
             return {
                 ...prevDevice,
+                characteristics: {
+                    ...prevDevice.characteristics,
+                    [charUuid]: {
+                        ...updatedChar,
+                        value: newValue
+                    }
+                },
                 characteristicsByService: {
                     ...prevDevice.characteristicsByService,
                     [serviceUuid]: {
@@ -94,13 +114,26 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
     const setCharUpdateInProgress = useCallback((charUuid: string, inProgress: boolean) => {
         setSelectedDevice(prevDevice => {
             if (!prevDevice) return null;
-            const serviceUuid = Object.keys(prevDevice.characteristicsByService).find(
-                svc => prevDevice.characteristicsByService[svc][charUuid]
+            
+            // Update flat map
+            const updatedChar = prevDevice.characteristics[charUuid];
+            if (!updatedChar) return prevDevice;
+
+            // Also update nested structure for backwards compatibility
+            const serviceUuid = Object.keys(prevDevice.serviceCharacteristics || {}).find(
+                svc => prevDevice.serviceCharacteristics[svc].includes(charUuid)
             );
             if (!serviceUuid) return prevDevice;
 
             return {
                 ...prevDevice,
+                characteristics: {
+                    ...prevDevice.characteristics,
+                    [charUuid]: {
+                        ...updatedChar,
+                        isUpdateInProgress: inProgress
+                    }
+                },
                 characteristicsByService: {
                     ...prevDevice.characteristicsByService,
                     [serviceUuid]: {

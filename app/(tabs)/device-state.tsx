@@ -5,7 +5,7 @@ import { decodeBooleanFromBase64, decodeColorFromBase64, decodeUint32FromBase64,
 import { SMP_CHARACTERISTIC_UUID, SMP_SERVICE_UUID } from "@/services/mcumgr";
 import { Link } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, Button, KeyboardAvoidingView, Platform, ScrollView, Switch, TextInput, View } from "react-native";
+import { Animated, Button, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 
@@ -106,12 +106,8 @@ export default function DeviceStateScreen() {
     async function writeCharValue(charUuid: string, newEncodedValue: string, previousEncodedValue: string) {
         const success = await writeToCharacteristic(charUuid, newEncodedValue);
 
-        // Get the characteristic info to determine how to decode the value
-        const charInfo = selectedDevice?.characteristicsByService
-            ? Object.values(selectedDevice.characteristicsByService)
-                .flatMap(chars => Object.entries(chars))
-                .find(([uuid, _]) => uuid === charUuid)?.[1]
-            : null;
+        // Get the characteristic info using the flat lookup
+        const charInfo = selectedDevice?.characteristics?.[charUuid] ?? null;
 
         if (success) {
             const decodedValue = decodeValueForInput(charInfo?.cpfFormat ?? null, newEncodedValue, charUuid);
@@ -161,15 +157,7 @@ export default function DeviceStateScreen() {
 
             return (
                 <TextInput
-                    style={{
-                        borderWidth: 1,
-                        borderColor: '#ccc',
-                        borderRadius: 4,
-                        padding: 4,
-                        flex: 1,
-                        minWidth: 80,
-                        color: '#fff',
-                    }}
+                    style={styles.textInput}
                     placeholder="Enter value"
                     placeholderTextColor="#888"
                     editable={!charInfo.isUpdateInProgress}
@@ -193,15 +181,7 @@ export default function DeviceStateScreen() {
 
             return (
                 <TextInput
-                    style={{
-                        borderWidth: 1,
-                        borderColor: '#ccc',
-                        borderRadius: 4,
-                        padding: 4,
-                        flex: 1,
-                        minWidth: 80,
-                        color: '#fff',
-                    }}
+                    style={styles.textInput}
                     placeholder="Enter number"
                     placeholderTextColor="#888"
                     keyboardType="numeric"
@@ -242,17 +222,8 @@ export default function DeviceStateScreen() {
             }
 
             return (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View
-                        style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 6,
-                            backgroundColor: `rgb(${r}, ${g}, ${b})`,
-                            borderWidth: 1,
-                            borderColor: '#ccc',
-                        }}
-                    />
+                <View style={styles.colorPickerContainer}>
+                    <View style={[styles.colorPreview, { backgroundColor: `rgb(${r}, ${g}, ${b})` }]} />
                     <Link href={`/color-picker-modal?r=${r}&g=${g}&b=${b}&charUuid=${charUuid}`} asChild>
                         <Button title="Pick Color" onPress={() => { }} />
                     </Link>
@@ -264,19 +235,18 @@ export default function DeviceStateScreen() {
     }
 
     return (
-        <SafeAreaView
-            style={{ flex: 1, overflow: 'hidden' }}>
+        <SafeAreaView style={styles.container}>
             <KeyboardAvoidingView
-                style={{ flex: 1 }}
+                style={styles.container}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 keyboardVerticalOffset={50}>
                 <ThemedText>
                     {selectedDevice == null ? "NOT CONNECTED" : selectedDevice.name}
                 </ThemedText>
 
-                <View style={{ height: 1, backgroundColor: '#ccc', marginVertical: 16 }} />
+                <View style={styles.separator} />
 
-                <ScrollView contentContainerStyle={{ paddingBottom: /*tabBarHeight*/ 0 }}>
+                <ScrollView contentContainerStyle={styles.scrollContent}>
                     {
                         selectedDevice?.services.map((service, index) => {
                             return (
@@ -304,8 +274,8 @@ export default function DeviceStateScreen() {
                                         return (
                                             <View
                                                 key={`${service.uuid} -char - ${charIndex} `}
-                                                style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 16, marginVertical: 4 }}>
-                                                <Animated.Text style={{ fontSize: 12, flexShrink: 1, marginRight: 8, color: textColor }}>
+                                                style={styles.characteristicRow}>
+                                                <Animated.Text style={[styles.characteristicLabel, { color: textColor }]}>
                                                     {charInfo.name ?? getCharacteristicName(charUuid)}
                                                 </Animated.Text>
                                                 {isMcuMgrCharacteristic && (
@@ -319,7 +289,7 @@ export default function DeviceStateScreen() {
                                     })}
 
                                     {index < (selectedDevice?.services.length ?? 0) - 1 && (
-                                        <View style={{ height: 1, backgroundColor: '#ccc', marginVertical: 16 }} />
+                                        <View style={styles.separator} />
                                     )}
                                 </View>
                             )
@@ -330,3 +300,50 @@ export default function DeviceStateScreen() {
         </SafeAreaView>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        overflow: 'hidden',
+    },
+    separator: {
+        height: 1,
+        backgroundColor: '#ccc',
+        marginVertical: 16,
+    },
+    scrollContent: {
+        paddingBottom: 0,
+    },
+    characteristicRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginLeft: 16,
+        marginVertical: 4,
+    },
+    characteristicLabel: {
+        fontSize: 12,
+        flexShrink: 1,
+        marginRight: 8,
+    },
+    textInput: {
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 4,
+        padding: 4,
+        flex: 1,
+        minWidth: 80,
+        color: '#fff',
+    },
+    colorPickerContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    colorPreview: {
+        width: 32,
+        height: 32,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#ccc',
+    },
+});

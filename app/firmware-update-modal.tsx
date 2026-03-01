@@ -1,6 +1,7 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useBluetooth } from '@/context/bluetooth-context';
+import { useMcuMgrClient } from '@/hooks/use-mcumgr-client';
 import {
     calculateOverallUploadProgress,
     findUploadedImageForIndex,
@@ -8,11 +9,11 @@ import {
     parseFirmwareImageIndex,
     parseFirmwarePackageFromBase64
 } from '@/services/firmware-package';
-import { formatBytes, formatHash, ImageSlot, McuMgrClient, SlotInfoResponse } from '@/services/mcumgr';
+import { formatBytes, formatHash, ImageSlot, SlotInfoResponse } from '@/services/mcumgr';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system/next';
 import { Link } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Button, ScrollView, StyleSheet, View } from 'react-native';
 
 // ============================================================================
@@ -21,8 +22,7 @@ import { ActivityIndicator, Button, ScrollView, StyleSheet, View } from 'react-n
 
 export default function FirmwareUpdateModal() {
     const { selectedDevice, setSelectedDevice } = useBluetooth();
-    const [client, setClient] = useState<McuMgrClient | null>(null);
-    const [isInitializing, setIsInitializing] = useState(true);
+    const { client, isInitializing, error: initError } = useMcuMgrClient(selectedDevice?.device ?? null);
     const [imageState, setImageState] = useState<ImageSlot[]>([]);
     const [status, setStatus] = useState<string>('');
     const [error, setError] = useState<string>('');
@@ -31,15 +31,23 @@ export default function FirmwareUpdateModal() {
     const [slotInfo, setSlotInfo] = useState<SlotInfoResponse | null>(null);
     const [firmwarePackage, setFirmwarePackage] = useState<FirmwarePackage | null>(null);
     const [currentUploadIndex, setCurrentUploadIndex] = useState<number>(0);
-    const initializedRef = useRef(false);
 
-    const refreshImageState = useCallback(async (mcuClient?: McuMgrClient) => {
-        const c = mcuClient || client;
-        if (!c) return;
+    // Update context with client for cleanup on disconnect
+    useEffect(() => {
+        if (client && selectedDevice) {
+            setSelectedDevice({
+                ...selectedDevice,
+                mcuMgrClient: client
+            });
+        }
+    }, [client, selectedDevice?.mac]); // Only update when client or device MAC changes
+
+    const refreshImageState = useCallback(async () => {
+        if (!client) return;
 
         try {
             setStatus('Fetching image state...');
-            const state = await c.getImageState();
+            const state = await client.getImageState();
             setImageState(state.images);
             setStatus('');
         } catch (e: unknown) {
@@ -48,13 +56,12 @@ export default function FirmwareUpdateModal() {
         }
     }, [client]);
 
-    const refreshSlotInfo = useCallback(async (mcuClient?: McuMgrClient) => {
-        const c = mcuClient || client;
-        if (!c) return;
+    const refreshSlotInfo = useCallback(async () => {
+        if (!client) return;
 
         try {
             setStatus('Fetching slot info...');
-            const info = await c.getSlotInfo();
+            const info = await client.getSlotInfo();
             // Only set slot info if it has the images property
             if (info && info.images && Array.isArray(info.images)) {
                 setSlotInfo(info);
@@ -70,64 +77,24 @@ export default function FirmwareUpdateModal() {
         }
     }, [client]);
 
-    // Initialize MCUmgr client
+    // Fetch initial state when client becomes available
     useEffect(() => {
-        // Prevent re-initialization
-        if (initializedRef.current) return;
+        if (!client) return;
 
-        async function init() {
-            if (!selectedDevice?.device) {
-                setError('No device connected');
-                setIsInitializing(false);
-                return;
-            }
-
-            initializedRef.current = true;
-
-            try {
-                setStatus('Initializing MCUmgr...');
-                const mcuClient = new McuMgrClient(selectedDevice.device);
-                await mcuClient.initialize();
-                setClient(mcuClient);
-
-                // Store client in context for cleanup on disconnect
-                setSelectedDevice({
-                    ...selectedDevice,
-                    mcuMgrClient: mcuClient
-                });
-
-                // Fetch initial image state
-                setStatus('Fetching image state...');
-                const state = await mcuClient.getImageState();
-                setImageState(state.images);
-
-                // Try to fetch slot info (may not be supported)
-                try {
-                    setStatus('Fetching slot info...');
-                    const info = await mcuClient.getSlotInfo();
-                    setSlotInfo(info);
-                } catch {
-                    console.log('Slot info not available');
-                }
-
-                setStatus('');
-            } catch (e: unknown) {
-                const errorMessage = e instanceof Error ? e.message : String(e);
-                setError(`Failed to initialize: ${errorMessage}`);
-            } finally {
-                setIsInitializing(false);
-            }
+        async function fetchInitialState() {
+            await refreshImageState();
+            await refreshSlotInfo();
         }
 
-        init();
+        fetchInitialState();
+    }, [client, refreshImageState, refreshSlotInfo]);
 
-        // Cleanup on unmount
-        return () => {
-            if (client) {
-                client.destroy();
-            }
-        };
-    }, [selectedDevice, client]);
+    // Display initialization error if present
+    useEffect(() => {
+        if (initError) {
+            setError(initError);
+        }
+    }, [initError]);
 
     async function handleSelectFirmwarePackage() {
         try {

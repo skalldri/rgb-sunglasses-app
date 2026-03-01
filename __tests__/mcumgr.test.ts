@@ -337,7 +337,7 @@ describe('McuMgrClient upload behavior', () => {
 
     jest.spyOn(internal, 'sendRequest').mockResolvedValueOnce({ err: { group: 1, rc: 2 } });
     await expect(client.uploadImage(new Uint8Array(8), 0)).rejects.toThrow(
-      'Image upload error: group=1, rc=2'
+      'Image upload error at offset 0: group=1, rc=2'
     );
   });
 
@@ -407,7 +407,7 @@ describe('McuMgrClient command wrappers', () => {
     const internal = client as any;
 
     jest.spyOn(internal, 'sendRequest').mockResolvedValueOnce({ rc: 7 });
-    await expect(client.getImageState()).rejects.toThrow('Image state error: 7');
+    await expect(client.getImageState()).rejects.toThrow('Image state error: rc=7');
 
     jest.spyOn(internal, 'sendRequest').mockResolvedValueOnce({ err: { group: 1, rc: 9 } });
     await expect(client.getImageState()).rejects.toThrow('Image state error: group=1, rc=9');
@@ -433,7 +433,7 @@ describe('McuMgrClient command wrappers', () => {
     const internal = client as any;
 
     jest.spyOn(internal, 'sendRequest').mockResolvedValueOnce({ rc: 3 });
-    await expect(client.setImageState(undefined, false)).rejects.toThrow('Set image state error: 3');
+    await expect(client.setImageState(undefined, false)).rejects.toThrow('Set image state error: rc=3');
 
     jest.spyOn(internal, 'sendRequest').mockResolvedValueOnce({ err: { group: 1, rc: 7 } });
     await expect(client.setImageState(undefined, false)).rejects.toThrow(
@@ -446,7 +446,7 @@ describe('McuMgrClient command wrappers', () => {
     const internal = client as any;
 
     jest.spyOn(internal, 'sendRequest').mockResolvedValueOnce({ rc: 5 });
-    await expect(client.eraseImage(1)).rejects.toThrow('Image erase error: 5');
+    await expect(client.eraseImage(1)).rejects.toThrow('Image erase error: rc=5');
 
     jest.spyOn(internal, 'sendRequest').mockResolvedValueOnce({ err: { group: 1, rc: 4 } });
     await expect(client.getSlotInfo()).rejects.toThrow('Slot info error: group=1, rc=4');
@@ -469,7 +469,7 @@ describe('McuMgrClient command wrappers', () => {
     await expect(client.getSlotInfo()).resolves.toEqual(slotInfo);
 
     jest.spyOn(internal, 'sendRequest').mockResolvedValueOnce({ rc: 6 });
-    await expect(client.getSlotInfo()).rejects.toThrow('Slot info error: 6');
+    await expect(client.getSlotInfo()).rejects.toThrow('Slot info error: rc=6');
   });
 
   it('echo/reset/getMcuMgrParams wrapper behavior', async () => {

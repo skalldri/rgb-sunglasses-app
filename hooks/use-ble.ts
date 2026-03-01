@@ -21,16 +21,16 @@ const requestAndroid31Permissions = async () => {
     const bluetoothScanPermission = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         {
-            title: "Location Permission",
-            message: "Bluetooth Low Energy requires Location",
+            title: "Bluetooth Permission",
+            message: "Required to discover nearby Bluetooth devices",
             buttonPositive: "OK",
         }
     );
     const bluetoothConnectPermission = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
         {
-            title: "Location Permission",
-            message: "Bluetooth Low Energy requires Location",
+            title: "Bluetooth Permission",
+            message: "Required to connect to Bluetooth devices",
             buttonPositive: "OK",
         }
     );
@@ -38,7 +38,7 @@ const requestAndroid31Permissions = async () => {
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         {
             title: "Location Permission",
-            message: "Bluetooth Low Energy requires Location",
+            message: "Required for Bluetooth device scanning on Android",
             buttonPositive: "OK",
         }
     );
@@ -50,23 +50,20 @@ const requestAndroid31Permissions = async () => {
     );
 };
 
-export const requestPermissions = async () => {
+export const requestPermissions = async (): Promise<boolean> => {
     if (Platform.OS === "android") {
         if ((ExpoDevice.platformApiLevel ?? -1) < 31) {
             const granted = await PermissionsAndroid.request(
                 PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
                 {
                     title: "Location Permission",
-                    message: "Bluetooth Low Energy requires Location",
+                    message: "Required for Bluetooth device scanning on Android",
                     buttonPositive: "OK",
                 }
             );
             return granted === PermissionsAndroid.RESULTS.GRANTED;
         } else {
-            const isAndroid31PermissionsGranted =
-                await requestAndroid31Permissions();
-
-            return isAndroid31PermissionsGranted;
+            return await requestAndroid31Permissions();
         }
     } else {
         return true;
