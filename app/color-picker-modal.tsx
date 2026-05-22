@@ -1,6 +1,7 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useBluetooth } from '@/context/bluetooth-context';
+import { encodeColorToBase64 } from '@/services/ble-value-codec';
 import Slider from '@react-native-community/slider';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -210,8 +211,7 @@ export default function ColorPickerModal() {
                 style={styles.link}
                 onPress={async () => {
                     if (charUuid) {
-                        // Encode RGB as uint32 (little-endian): [B, G, R, 0] for 0x00RRGGBB format
-                        const encoded = btoa(String.fromCharCode(rgb[2], rgb[1], rgb[0], 0));
+                        const encoded = encodeColorToBase64({ r: rgb[0], g: rgb[1], b: rgb[2] });
                         await writeToCharacteristic(charUuid, encoded);
                     }
                     router.back();

@@ -2,12 +2,12 @@ import {
     getCharacteristicName,
     getDescriptorName,
     getServiceName,
-    getUuidForCccDescriptor,
-    getUuidForCpfDescriptor,
-    getUuidForCudDescriptor,
+    UUID_CCC_DESCRIPTOR,
+    UUID_CPF_DESCRIPTOR,
+    UUID_CUD_DESCRIPTOR,
 } from "@/constants/bluetooth";
 import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
-import { bleManager } from "@/hooks/use-ble";
+import { bleManager } from "@/hooks/ble-manager";
 import { SMP_CHARACTERISTIC_UUID, SMP_SERVICE_UUID } from "@/services/mcumgr";
 import { useEffect, useRef, useState } from "react";
 
@@ -49,6 +49,8 @@ export function useBleConnection(macAddress: string, deviceName: string): UseBle
                     const characteristicInfos: Record<string, CharacteristicInfo> = {};
                     const charUuids: string[] = [];
 
+                    console.log(`START processing Service UUID: ${getServiceName(service.uuid)}`);
+
                     for (const characteristic of serviceChars) {
                         const descriptors = await service.descriptorsForCharacteristic(characteristic.uuid);
                         console.log(`Characteristic: ${getCharacteristicName(characteristic.uuid)}, Descriptors: ${descriptors.length}`);
@@ -66,19 +68,19 @@ export function useBleConnection(macAddress: string, deviceName: string): UseBle
                             const readDescriptor = await descriptor.read();
                             console.log(`Descriptor Value: ${readDescriptor.value}`);
 
-                            if (descriptor.uuid === getUuidForCudDescriptor()) {
+                            if (descriptor.uuid === UUID_CUD_DESCRIPTOR) {
                                 charInfo.name = atob(readDescriptor.value || '');
                                 console.log(`CUD Descriptor Value (decoded): ${charInfo.name}`);
                             }
 
-                            if (descriptor.uuid === getUuidForCpfDescriptor()) {
+                            if (descriptor.uuid === UUID_CPF_DESCRIPTOR) {
                                 const decoded = atob(readDescriptor.value || '');
                                 charInfo.cpfFormat = decoded.charCodeAt(0);
                                 const hex = Array.from(decoded, char => char.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
                                 console.log(`CPF Descriptor Value (hex): ${hex}`);
                             }
 
-                            if (descriptor.uuid === getUuidForCccDescriptor()) {
+                            if (descriptor.uuid === UUID_CCC_DESCRIPTOR) {
                                 const decoded = atob(readDescriptor.value || '');
                                 const hex = Array.from(decoded, char => char.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
                                 console.log(`CCC Descriptor Value (hex): ${hex}`);

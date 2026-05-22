@@ -72,16 +72,14 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
         return device.characteristics?.[charUuid] ?? null;
     }, []);
 
-    // Helper to update characteristic value in context
-    const updateCharValue = useCallback((charUuid: string, newValue: string) => {
+    // Shared helper: patches fields on a characteristic in both the flat and nested maps
+    const updateCharFields = useCallback((charUuid: string, fields: Partial<CharacteristicInfo>) => {
         setSelectedDevice(prevDevice => {
             if (!prevDevice) return null;
-            
-            // Update flat map
+
             const updatedChar = prevDevice.characteristics[charUuid];
             if (!updatedChar) return prevDevice;
 
-            // Also update nested structure for backwards compatibility
             const serviceUuid = Object.keys(prevDevice.serviceCharacteristics || {}).find(
                 svc => prevDevice.serviceCharacteristics[svc].includes(charUuid)
             );
@@ -91,10 +89,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
                 ...prevDevice,
                 characteristics: {
                     ...prevDevice.characteristics,
-                    [charUuid]: {
-                        ...updatedChar,
-                        value: newValue
-                    }
+                    [charUuid]: { ...updatedChar, ...fields }
                 },
                 characteristicsByService: {
                     ...prevDevice.characteristicsByService,
@@ -102,51 +97,23 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
                         ...prevDevice.characteristicsByService[serviceUuid],
                         [charUuid]: {
                             ...prevDevice.characteristicsByService[serviceUuid][charUuid],
-                            value: newValue
+                            ...fields
                         }
                     }
                 }
             };
         });
     }, []);
+
+    // Helper to update characteristic value in context
+    const updateCharValue = useCallback((charUuid: string, newValue: string) => {
+        updateCharFields(charUuid, { value: newValue });
+    }, [updateCharFields]);
 
     // Helper to set isUpdateInProgress flag
     const setCharUpdateInProgress = useCallback((charUuid: string, inProgress: boolean) => {
-        setSelectedDevice(prevDevice => {
-            if (!prevDevice) return null;
-            
-            // Update flat map
-            const updatedChar = prevDevice.characteristics[charUuid];
-            if (!updatedChar) return prevDevice;
-
-            // Also update nested structure for backwards compatibility
-            const serviceUuid = Object.keys(prevDevice.serviceCharacteristics || {}).find(
-                svc => prevDevice.serviceCharacteristics[svc].includes(charUuid)
-            );
-            if (!serviceUuid) return prevDevice;
-
-            return {
-                ...prevDevice,
-                characteristics: {
-                    ...prevDevice.characteristics,
-                    [charUuid]: {
-                        ...updatedChar,
-                        isUpdateInProgress: inProgress
-                    }
-                },
-                characteristicsByService: {
-                    ...prevDevice.characteristicsByService,
-                    [serviceUuid]: {
-                        ...prevDevice.characteristicsByService[serviceUuid],
-                        [charUuid]: {
-                            ...prevDevice.characteristicsByService[serviceUuid][charUuid],
-                            isUpdateInProgress: inProgress
-                        }
-                    }
-                }
-            };
-        });
-    }, []);
+        updateCharFields(charUuid, { isUpdateInProgress: inProgress });
+    }, [updateCharFields]);
 
     // Write to a characteristic and update context state
     // Returns true on success, false on failure

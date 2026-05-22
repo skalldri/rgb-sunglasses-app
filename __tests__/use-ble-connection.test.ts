@@ -3,12 +3,12 @@ import React from 'react';
 
 import {
     BLE_GATT_CPF_FORMAT_UTF8S,
-    getUuidForCccDescriptor,
-    getUuidForCpfDescriptor,
-    getUuidForCudDescriptor,
+    UUID_CCC_DESCRIPTOR,
+    UUID_CPF_DESCRIPTOR,
+    UUID_CUD_DESCRIPTOR,
 } from '@/constants/bluetooth';
 import * as BluetoothContext from '@/context/bluetooth-context';
-import * as BleHook from '@/hooks/use-ble';
+import * as BleHook from '@/hooks/ble-manager';
 import { useBleConnection } from '@/hooks/use-ble-connection';
 import { SMP_CHARACTERISTIC_UUID, SMP_SERVICE_UUID } from '@/services/mcumgr';
 
@@ -93,11 +93,11 @@ describe('useBleConnection', () => {
         const service = makeService('svc-1', [char], {
             'char-1': [
                 {
-                    uuid: getUuidForCudDescriptor(),
+                    uuid: UUID_CUD_DESCRIPTOR,
                     read: jest.fn(async () => ({ value: btoa('My Char') })),
                 },
                 {
-                    uuid: getUuidForCpfDescriptor(),
+                    uuid: UUID_CPF_DESCRIPTOR,
                     read: jest.fn(async () => ({
                         value: btoa(String.fromCharCode(BLE_GATT_CPF_FORMAT_UTF8S, 0, 0, 0, 0, 0, 0)),
                     })),

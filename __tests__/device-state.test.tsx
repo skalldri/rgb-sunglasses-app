@@ -5,12 +5,14 @@ import { Animated } from 'react-native';
 import DeviceStateScreen from '@/app/(tabs)/device-state';
 import {
   BLE_GATT_CPF_FORMAT_BOOLEAN,
+  BLE_GATT_CPF_FORMAT_CUSTOM_COLOR,
   BLE_GATT_CPF_FORMAT_UINT32,
   BLE_GATT_CPF_FORMAT_UTF8S,
 } from '@/constants/bluetooth';
 import * as BluetoothContext from '@/context/bluetooth-context';
 import {
   encodeBooleanToBase64,
+  encodeColorToBase64,
   encodeUint32ToBase64,
   encodeUtf8ToBase64,
 } from '@/services/ble-value-codec';
@@ -151,6 +153,59 @@ describe('DeviceStateScreen', () => {
 
     await waitFor(() => {
       expect(writeToCharacteristic).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('renders a color swatch and Pick Color button for color characteristics', () => {
+    jest.spyOn(BluetoothContext, 'useBluetooth').mockReturnValue({
+      selectedDevice: buildSelectedDevice([
+        {
+          uuid: 'color-char',
+          cpfFormat: BLE_GATT_CPF_FORMAT_CUSTOM_COLOR,
+          value: encodeColorToBase64({ r: 255, g: 128, b: 0 }),
+        },
+      ]),
+      writeToCharacteristic: jest.fn(async () => true),
+    } as any);
+
+    const { getByText } = render(<DeviceStateScreen />);
+    expect(getByText('Pick Color')).toBeTruthy();
+  });
+
+  it('syncs pendingValues when a BLE notification updates a characteristic value', async () => {
+    const writeToCharacteristic = jest.fn(async () => true);
+    const spy = jest.spyOn(BluetoothContext, 'useBluetooth').mockReturnValue({
+      selectedDevice: buildSelectedDevice([
+        {
+          uuid: 'utf8-char',
+          cpfFormat: BLE_GATT_CPF_FORMAT_UTF8S,
+          value: encodeUtf8ToBase64('initial'),
+        },
+      ]),
+      writeToCharacteristic,
+    } as any);
+
+    const { getByPlaceholderText, rerender } = render(<DeviceStateScreen />);
+
+    await waitFor(() => {
+      expect(getByPlaceholderText('Enter value').props.value).toBe('initial');
+    });
+
+    spy.mockReturnValue({
+      selectedDevice: buildSelectedDevice([
+        {
+          uuid: 'utf8-char',
+          cpfFormat: BLE_GATT_CPF_FORMAT_UTF8S,
+          value: encodeUtf8ToBase64('updated-by-notification'),
+        },
+      ]),
+      writeToCharacteristic,
+    } as any);
+
+    rerender(<DeviceStateScreen />);
+
+    await waitFor(() => {
+      expect(getByPlaceholderText('Enter value').props.value).toBe('updated-by-notification');
     });
   });
 });

@@ -4,7 +4,7 @@ import * as ExpoRouter from 'expo-router';
 
 import BluetoothScreen from '@/app/(tabs)/bluetooth';
 import * as BluetoothContext from '@/context/bluetooth-context';
-import * as BleHook from '@/hooks/use-ble';
+import * as BleHook from '@/hooks/ble-manager';
 
 jest.mock('@/components/parallax-scroll-view', () => {
   const React = require('react');

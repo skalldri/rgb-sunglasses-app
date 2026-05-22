@@ -6,12 +6,12 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 
 import { useBluetooth } from "@/context/bluetooth-context";
-import { bleManager, requestPermissions } from "@/hooks/use-ble";
+import { bleManager, requestPermissions } from "@/hooks/ble-manager";
 import { useFocusEffect } from "expo-router";
 import { LogLevel } from "react-native-ble-plx";
 
 // Set log level once at module load
-bleManager.setLogLevel(LogLevel.Verbose);
+if (__DEV__) bleManager.setLogLevel(LogLevel.Verbose);
 
 type BleDevice = {
     name: string;

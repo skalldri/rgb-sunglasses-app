@@ -1,15 +1,18 @@
 
 export const KnownServiceIds: { [key: string]: string } = {
     "12345678-1234-5678-0001-56789abc0000": "Core Config Service",
-    "12345678-1234-5678-0002-56789abc0000": "ZigZag Animation Service",
-    "12345678-1234-5678-0003-56789abc0000": "Text Animation Service",
-    "12345678-1234-5678-0004-56789abc0000": "Rainbow Animation Service",
-    "12345678-1234-5678-0005-56789abc0000": "MyEyes Animation Service",
+    "12345678-1234-5678-0100-56789abd0000": "ZigZag Animation Service",
+    "12345678-1234-5678-0200-56789abd0000": "Text Animation Service",
+    "12345678-1234-5678-0500-56789abd0000": "Rainbow Animation Service",
+    "12345678-1234-5678-0700-56789abd0000": "MyEyes Animation Service",
+    "12345678-1234-5678-0800-56789abd0000": "Beat Animation Service",
+    "12345678-1234-5678-0900-56789abd0000": "FFT Bars Animation Service",
     "12345678-1234-5678-1234-56789abcdef0": "Badge Name Service",
     "8d53dc1d-1db7-4cd3-868b-8a527460aa84": "McuMgr Service",
     "57a70000-9350-11ed-a1eb-0242ac120002": "Nordic Status Message Service",
     "00001801-0000-1000-8000-00805f9b34fb": "Generic Attribute Service",
     "00001800-0000-1000-8000-00805f9b34fb": "Generic Access Service",
+    "deadbeef-1234-5678-1234-56789abcdef0": "Text Animation Now Playing Service",
 };
 
 export const KnownCharacteristicIds: { [key: string]: string } = {
@@ -69,20 +72,9 @@ export function getDescriptorName(descriptorId: string): string {
     return KnownDescriptorIds[descriptorId] || descriptorId;
 }
 
-export function getUuidForCpfDescriptor() {
-    // Characteristic Presentation Format Descriptor UUID
-    // Used to describe the format of a characteristic's value
-    return "00002904-0000-1000-8000-00805f9b34fb";
-}
-
-export function getUuidForCudDescriptor() {
-    // Characteristic User Description Descriptor UUID
-    // Used to provide a user-friendly description of a characteristic
-    return "00002901-0000-1000-8000-00805f9b34fb";
-}
-
-export function getUuidForCccDescriptor() {
-    // Client Characteristic Configuration Descriptor UUID
-    // Used to enable/disable notifications
-    return "00002902-0000-1000-8000-00805f9b34fb";
-}
+// Characteristic Presentation Format Descriptor UUID
+export const UUID_CPF_DESCRIPTOR = "00002904-0000-1000-8000-00805f9b34fb";
+// Characteristic User Description Descriptor UUID
+export const UUID_CUD_DESCRIPTOR = "00002901-0000-1000-8000-00805f9b34fb";
+// Client Characteristic Configuration Descriptor UUID
+export const UUID_CCC_DESCRIPTOR = "00002902-0000-1000-8000-00805f9b34fb";

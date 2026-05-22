@@ -1,11 +1,15 @@
+import { CharacteristicBoolean } from "@/components/characteristic-boolean";
+import { CharacteristicColor } from "@/components/characteristic-color";
+import { CharacteristicUint32 } from "@/components/characteristic-uint32";
+import { CharacteristicUtf8 } from "@/components/characteristic-utf8";
 import { ThemedText } from "@/components/themed-text";
 import { BLE_GATT_CPF_FORMAT_BOOLEAN, BLE_GATT_CPF_FORMAT_CUSTOM_COLOR, BLE_GATT_CPF_FORMAT_UINT32, BLE_GATT_CPF_FORMAT_UTF8S, getCharacteristicName, getServiceName } from "@/constants/bluetooth";
 import { CharacteristicInfo, useBluetooth } from "@/context/bluetooth-context";
-import { decodeBooleanFromBase64, decodeColorFromBase64, decodeUint32FromBase64, decodeUtf8FromBase64, encodeBooleanToBase64, encodeUint32ToBase64, encodeUtf8ToBase64, sanitizeNumericInput } from "@/services/ble-value-codec";
+import { decodeUint32FromBase64, decodeUtf8FromBase64 } from "@/services/ble-value-codec";
 import { SMP_CHARACTERISTIC_UUID, SMP_SERVICE_UUID } from "@/services/mcumgr";
 import { Link } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, Button, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from "react-native";
+import { Animated, Button, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 
@@ -155,113 +159,33 @@ export default function DeviceStateScreen() {
 
     function renderCharacteristicInput(charUuid: string, charInfo: CharacteristicInfo) {
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_BOOLEAN) {
-            // Decode the boolean value from the characteristic
-            let displayValue = false;
-            if (charInfo.value) {
-                try {
-                    displayValue = decodeBooleanFromBase64(charInfo.value);
-                } catch (e) {
-                    console.log('Error decoding boolean value:', e);
-                }
-            }
-
-            return (
-                <Switch
-                    value={displayValue}
-                    disabled={charInfo.isUpdateInProgress}
-                    onValueChange={(value) => {
-                        console.log(`Toggle changed to: ${value} `);
-
-                        const previousValue = charInfo.value ?? '';
-                        const encoded = encodeBooleanToBase64(value);
-
-                        // Write to BLE - writeCharValue will update on success and revert on failure
-                        writeCharValue(charUuid, encoded, previousValue);
-                    }}
-                />
-            );
+            return <CharacteristicBoolean charUuid={charUuid} charInfo={charInfo} onWrite={writeCharValue} />;
         }
-
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UTF8S) {
-            // Use local pending value during editing
-            const displayValue = pendingValues[charUuid] ?? '';
-
             return (
-                <TextInput
-                    style={styles.textInput}
-                    placeholder="Enter value"
-                    placeholderTextColor="#888"
-                    editable={!charInfo.isUpdateInProgress}
-                    value={displayValue}
-                    onChangeText={(text) => {
-                        // Update local state only - don't update BLE value yet
-                        setPendingValues(prev => ({ ...prev, [charUuid]: text }));
-                    }}
-                    onSubmitEditing={() => {
-                        const previousValue = charInfo.value ?? '';
-                        const encoded = encodeUtf8ToBase64(displayValue);
-                        writeCharValue(charUuid, encoded, previousValue);
-                    }}
+                <CharacteristicUtf8
+                    charUuid={charUuid}
+                    charInfo={charInfo}
+                    pendingValue={pendingValues[charUuid] ?? ''}
+                    onChangeText={(uuid, text) => setPendingValues(prev => ({ ...prev, [uuid]: text }))}
+                    onWrite={writeCharValue}
                 />
             );
         }
-
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_UINT32) {
-            // Use local pending value during editing
-            const displayValue = pendingValues[charUuid] ?? '';
-
             return (
-                <TextInput
-                    style={styles.textInput}
-                    placeholder="Enter number"
-                    placeholderTextColor="#888"
-                    keyboardType="numeric"
-                    editable={!charInfo.isUpdateInProgress}
-                    value={displayValue}
-                    onChangeText={(text) => {
-                        // Only allow numeric input
-                        const numericText = sanitizeNumericInput(text);
-                        // Update local state only - don't update BLE value yet
-                        setPendingValues(prev => ({ ...prev, [charUuid]: numericText }));
-                    }}
-                    onSubmitEditing={() => {
-                        const previousValue = charInfo.value ?? '';
-                        const numericValue = parseInt(displayValue, 10);
-
-                        if (!isNaN(numericValue)) {
-                            const encoded = encodeUint32ToBase64(numericValue);
-
-                            writeCharValue(charUuid, encoded, previousValue);
-                        } else {
-                            console.log(`Invalid number input: ${displayValue} `);
-                        }
-                    }}
+                <CharacteristicUint32
+                    charUuid={charUuid}
+                    charInfo={charInfo}
+                    pendingValue={pendingValues[charUuid] ?? ''}
+                    onChangeText={(uuid, text) => setPendingValues(prev => ({ ...prev, [uuid]: text }))}
+                    onWrite={writeCharValue}
                 />
             );
         }
-
         if (charInfo.cpfFormat === BLE_GATT_CPF_FORMAT_CUSTOM_COLOR) {
-            // Decode the UINT32 RGB value from the characteristic if available
-            let r = 0, g = 0, b = 0;
-            try {
-                const color = decodeColorFromBase64(charInfo.value);
-                r = color.r;
-                g = color.g;
-                b = color.b;
-            } catch (e) {
-                console.log('Error decoding custom color value:', e);
-            }
-
-            return (
-                <View style={styles.colorPickerContainer}>
-                    <View style={[styles.colorPreview, { backgroundColor: `rgb(${r}, ${g}, ${b})` }]} />
-                    <Link href={`/color-picker-modal?r=${r}&g=${g}&b=${b}&charUuid=${charUuid}`} asChild>
-                        <Button title="Pick Color" onPress={() => { }} />
-                    </Link>
-                </View>
-            );
+            return <CharacteristicColor charUuid={charUuid} charInfo={charInfo} />;
         }
-
         return null;
     }
 
@@ -358,26 +282,5 @@ const styles = StyleSheet.create({
         fontSize: 12,
         flexShrink: 1,
         marginRight: 8,
-    },
-    textInput: {
-        borderWidth: 1,
-        borderColor: '#ccc',
-        borderRadius: 4,
-        padding: 4,
-        flex: 1,
-        minWidth: 80,
-        color: '#fff',
-    },
-    colorPickerContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    colorPreview: {
-        width: 32,
-        height: 32,
-        borderRadius: 6,
-        borderWidth: 1,
-        borderColor: '#ccc',
     },
 });
