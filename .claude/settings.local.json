@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm test:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(node *)",
+      "Bash(npx jest *)"
     ]
   }
 }

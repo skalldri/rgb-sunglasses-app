@@ -9,8 +9,18 @@ import {
     parseFirmwareImageIndex,
     parseFirmwarePackageFromBase64
 } from '@/services/firmware-package';
+import {
+    compareVersions,
+    extractBoardRevision,
+    fetchLatestRelease,
+    findAssetForBoard,
+    GitHubAsset,
+    GitHubRelease,
+    parseVersionFromTag,
+} from '@/services/github-releases';
 import { formatBytes, formatHash, ImageSlot, SlotInfoResponse } from '@/services/mcumgr';
 import * as DocumentPicker from 'expo-document-picker';
+import * as LegacyFS from 'expo-file-system/legacy';
 import { File } from 'expo-file-system/next';
 import { Link } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -31,6 +41,22 @@ export default function FirmwareUpdateModal() {
     const [slotInfo, setSlotInfo] = useState<SlotInfoResponse | null>(null);
     const [firmwarePackage, setFirmwarePackage] = useState<FirmwarePackage | null>(null);
     const [currentUploadIndex, setCurrentUploadIndex] = useState<number>(0);
+
+    // Board detection
+    const [boardRevision, setBoardRevision] = useState<string | null>(null);
+    const [boardDetectionError, setBoardDetectionError] = useState<string>('');
+
+    // GitHub update check
+    type UpdateCheckState = 'idle' | 'checking' | 'upToDate' | 'updateAvailable' | 'error';
+    const [updateCheckState, setUpdateCheckState] = useState<UpdateCheckState>('idle');
+    const [latestRelease, setLatestRelease] = useState<GitHubRelease | null>(null);
+    const [latestAsset, setLatestAsset] = useState<GitHubAsset | null>(null);
+    const [latestVersion, setLatestVersion] = useState<string>('');
+    const [updateCheckError, setUpdateCheckError] = useState<string>('');
+
+    // Download
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [downloadProgress, setDownloadProgress] = useState<number>(0);
 
     // Update context with client for cleanup on disconnect
     useEffect(() => {
@@ -77,13 +103,29 @@ export default function FirmwareUpdateModal() {
         }
     }, [client]);
 
-    // Fetch initial state when client becomes available
+    // Fetch initial state when client becomes available, then detect board revision.
+    // All three SMP calls are sequenced to avoid concurrent requests (McuMgrClient
+    // only supports one pending request at a time).
     useEffect(() => {
         if (!client) return;
 
         async function fetchInitialState() {
             await refreshImageState();
             await refreshSlotInfo();
+
+            try {
+                const boardName = await client!.getOsInfo('i');
+                const revision = extractBoardRevision(boardName);
+                if (revision) {
+                    setBoardRevision(revision);
+                } else {
+                    setBoardDetectionError(`Unknown board: ${boardName}`);
+                }
+            } catch (e: unknown) {
+                setBoardDetectionError(
+                    `Board detection failed: ${e instanceof Error ? e.message : String(e)}`
+                );
+            }
         }
 
         fetchInitialState();
@@ -95,6 +137,37 @@ export default function FirmwareUpdateModal() {
             setError(initError);
         }
     }, [initError]);
+
+    // Check GitHub for the latest release once board revision is known
+    useEffect(() => {
+        if (!boardRevision || updateCheckState !== 'idle') return;
+
+        async function checkForUpdates() {
+            setUpdateCheckState('checking');
+            try {
+                const release = await fetchLatestRelease('skalldri', 'rgb-sunglasses');
+                const asset = findAssetForBoard(release.assets, boardRevision!);
+                if (!asset) {
+                    throw new Error(`No firmware asset found for board: ${boardRevision}`);
+                }
+
+                const githubVersion = parseVersionFromTag(release.tag_name);
+                const activeSlot = imageState.find(s => s.active && s.slot === 0);
+                const deviceVersion = activeSlot?.version ?? '';
+                const cmp = deviceVersion ? compareVersions(deviceVersion, githubVersion) : -1;
+
+                setLatestRelease(release);
+                setLatestAsset(asset);
+                setLatestVersion(githubVersion);
+                setUpdateCheckState(cmp < 0 ? 'updateAvailable' : 'upToDate');
+            } catch (e: unknown) {
+                setUpdateCheckError(e instanceof Error ? e.message : String(e));
+                setUpdateCheckState('error');
+            }
+        }
+
+        checkForUpdates();
+    }, [boardRevision, imageState]);
 
     async function handleSelectFirmwarePackage() {
         try {
@@ -177,6 +250,48 @@ export default function FirmwareUpdateModal() {
         }
     }
 
+    async function handleDownloadUpdate() {
+        if (!latestAsset) return;
+
+        setIsDownloading(true);
+        setDownloadProgress(0);
+        setError('');
+
+        const destUri = (LegacyFS.cacheDirectory ?? '') + 'firmware-update.zip';
+
+        try {
+            const task = LegacyFS.createDownloadResumable(
+                latestAsset.browser_download_url,
+                destUri,
+                {},
+                ({ totalBytesWritten, totalBytesExpectedToWrite }: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => {
+                    if (totalBytesExpectedToWrite > 0) {
+                        setDownloadProgress(
+                            Math.round((totalBytesWritten / totalBytesExpectedToWrite) * 100)
+                        );
+                    }
+                }
+            );
+
+            const result = await task.downloadAsync();
+            if (!result) {
+                throw new Error('Download was cancelled');
+            }
+
+            setStatus('Parsing firmware package...');
+            const fileRef = new File(result.uri);
+            const base64Data = await fileRef.base64();
+            const parsedPackage = await parseFirmwarePackageFromBase64(base64Data);
+            setFirmwarePackage(parsedPackage);
+            setStatus('');
+        } catch (e: any) {
+            setError(`Download failed: ${e.message}`);
+        } finally {
+            setIsDownloading(false);
+            setDownloadProgress(0);
+        }
+    }
+
     function handleCancelPackage() {
         setFirmwarePackage(null);
         setStatus('');
@@ -218,6 +333,109 @@ export default function FirmwareUpdateModal() {
         } catch (e: any) {
             setError(`Erase failed: ${e.message}`);
         }
+    }
+
+    function formatBoardRevision(revision: string): string {
+        if (revision === 'proto0') return 'Proto0';
+        if (revision === 'dk') return 'DK';
+        return revision;
+    }
+
+    function renderAutoUpdateSection() {
+        if (isDownloading) {
+            return (
+                <View style={styles.updateCard}>
+                    <ThemedText style={styles.sectionTitle}>Downloading Update...</ThemedText>
+                    <View style={styles.progressContainer}>
+                        <View style={[styles.progressBar, { width: `${downloadProgress}%` }]} />
+                        <ThemedText style={styles.progressText}>{downloadProgress}%</ThemedText>
+                    </View>
+                </View>
+            );
+        }
+
+        if (!boardRevision && !boardDetectionError) {
+            return (
+                <View style={styles.updateCard}>
+                    <ActivityIndicator size="small" />
+                    <ThemedText style={styles.status}>Detecting board...</ThemedText>
+                </View>
+            );
+        }
+
+        if (boardDetectionError && !boardRevision) {
+            return (
+                <View style={styles.updateCard}>
+                    <ThemedText style={styles.updateCardError}>{boardDetectionError}</ThemedText>
+                </View>
+            );
+        }
+
+        if (updateCheckState === 'checking') {
+            return (
+                <View style={styles.updateCard}>
+                    <ThemedText style={styles.boardLabel}>
+                        Board: {formatBoardRevision(boardRevision!)}
+                    </ThemedText>
+                    <ActivityIndicator size="small" />
+                    <ThemedText style={styles.status}>Checking for updates...</ThemedText>
+                </View>
+            );
+        }
+
+        if (updateCheckState === 'error') {
+            return (
+                <View style={styles.updateCard}>
+                    <ThemedText style={styles.boardLabel}>
+                        Board: {formatBoardRevision(boardRevision!)}
+                    </ThemedText>
+                    <ThemedText style={styles.updateCardError}>
+                        Update check failed: {updateCheckError}
+                    </ThemedText>
+                </View>
+            );
+        }
+
+        if (updateCheckState === 'upToDate') {
+            return (
+                <View style={styles.updateCard}>
+                    <ThemedText style={styles.boardLabel}>
+                        Board: {formatBoardRevision(boardRevision!)}
+                    </ThemedText>
+                    <ThemedText style={styles.updateCardSuccess}>
+                        Up to date (v{latestVersion})
+                    </ThemedText>
+                </View>
+            );
+        }
+
+        if (updateCheckState === 'updateAvailable' && latestAsset) {
+            const activeSlot = imageState.find(s => s.active && s.slot === 0);
+            const deviceVersion = activeSlot?.version ?? 'Unknown';
+
+            return (
+                <View style={[styles.updateCard, styles.updateCardHighlight]}>
+                    <ThemedText type="subtitle" style={styles.sectionTitle}>
+                        Update Available
+                    </ThemedText>
+                    <ThemedText style={styles.boardLabel}>
+                        Board: {formatBoardRevision(boardRevision!)}
+                    </ThemedText>
+                    <ThemedText style={styles.slotDetail}>Current: v{deviceVersion}</ThemedText>
+                    <ThemedText style={styles.slotDetail}>Latest: v{latestVersion}</ThemedText>
+                    <View style={styles.buttonRow}>
+                        <Button
+                            title="Download Update"
+                            onPress={handleDownloadUpdate}
+                            disabled={!client || isUploading}
+                            color="#4CAF50"
+                        />
+                    </View>
+                </View>
+            );
+        }
+
+        return null;
     }
 
     function renderImageSlot(slot: ImageSlot, index: number) {
@@ -386,6 +604,8 @@ export default function FirmwareUpdateModal() {
                             </>
                         )}
 
+                        {renderAutoUpdateSection()}
+
                         <ThemedText type="subtitle" style={styles.sectionTitle}>
                             Update Firmware
                         </ThemedText>
@@ -533,5 +753,33 @@ const styles = StyleSheet.create({
         marginTop: 15,
         paddingVertical: 15,
         alignSelf: 'center',
+    },
+    updateCard: {
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 10,
+        marginTop: 8,
+        alignItems: 'center',
+        gap: 8,
+    },
+    updateCardHighlight: {
+        borderWidth: 1,
+        borderColor: 'rgba(76,175,80,0.5)',
+        backgroundColor: 'rgba(76,175,80,0.1)',
+    },
+    updateCardError: {
+        color: '#ff4444',
+        fontSize: 13,
+        textAlign: 'center',
+    },
+    updateCardSuccess: {
+        color: '#4CAF50',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    boardLabel: {
+        fontSize: 12,
+        opacity: 0.6,
     },
 });

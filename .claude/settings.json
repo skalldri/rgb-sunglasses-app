@@ -1,0 +1,9 @@
+{
+    "permissions": {
+        "allow": [
+            "Bash(npm test:*)",
+            "WebSearch",
+            "Bash(npx jest *)"
+        ]
+    }
+}

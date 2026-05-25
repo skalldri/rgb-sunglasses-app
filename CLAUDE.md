@@ -1,5 +1,8 @@
 # RGB Sunglasses App - Copilot Instructions
 
+## Agent behavior
+- ALWAYS prefer to use built-in tools for interacting with the filesystem, reading or writing files. AVOID using command-line invocations for anything you can do with a built-in tool
+
 ## Project Overview
 React Native Expo app for controlling RGB sunglasses via Bluetooth Low Energy (BLE). Enables color customization, animation control, and firmware updates through a mobile interface.
 
